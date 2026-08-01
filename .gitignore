@@ -1,0 +1,10 @@
+Thumbs.db
+.DS_Store
+*.log
+.vscode/
+.idea/
+
+# Lokalne zmienne środowiskowe i sekrety.
+.env
+.env.*
+!.env.example
