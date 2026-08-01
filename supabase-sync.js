@@ -156,6 +156,52 @@
     }
   }
 
+  function invoiceFromDatabase(row) {
+    return {
+      id: row.id,
+      number: row.number,
+      date: row.issue_date,
+      contractor: row.contractor,
+      type: row.invoice_type,
+      net: Number(row.net_amount),
+      vatRate: Number(row.vat_rate),
+      category: row.category
+    };
+  }
+
+  function invoiceToDatabase(invoice, userId) {
+    return {
+      user_id: userId,
+      number: invoice.number,
+      issue_date: invoice.date,
+      contractor: invoice.contractor,
+      invoice_type: invoice.type,
+      net_amount: Number(invoice.net),
+      vat_rate: Number(invoice.vatRate),
+      category: invoice.type === 'sale' ? invoice.category : null
+    };
+  }
+
+  async function readInvoices() {
+    const { data, error } = await client
+      .from('invoices')
+      .select('*')
+      .order('issue_date', { ascending: false });
+    if (error) throw error;
+    return data.map(invoiceFromDatabase);
+  }
+
+  async function migrateInvoices(invoices) {
+    if (!invoices.length) return [];
+    const rows = invoices.map(invoice => invoiceToDatabase(invoice, currentUser.id));
+    const { data, error } = await client
+      .from('invoices')
+      .insert(rows)
+      .select();
+    if (error) throw error;
+    return data.map(invoiceFromDatabase);
+  }
+
   async function loadRemoteState(user) {
     if (!user || loadedUserId === user.id) return;
     loadedUserId = user.id;
@@ -172,20 +218,34 @@
       return;
     }
 
-    if (data && data.state) {
-      app.replaceState(data.state);
-      app.showToast('Wczytano dane z Supabase.');
-    } else {
+    try {
+      const hasRemoteState = Boolean(data && data.state);
+      const nextState = hasRemoteState ? data.state : app.getState();
+      let invoices = await readInvoices();
+
+      // Jednorazowa migracja faktur zapisanych wcześniej w app_states.state.
+      if (!invoices.length && Array.isArray(nextState.invoices) && nextState.invoices.length) {
+        invoices = await migrateInvoices(nextState.invoices);
+      }
+
+      app.replaceState(Object.assign({}, nextState, { invoices }));
       await writeState(app.getState());
-      app.showToast('Połączono Supabase i przeniesiono dane lokalne.');
+      app.showToast(hasRemoteState
+        ? 'Wczytano dane i faktury z Supabase.'
+        : 'Połączono Supabase i przeniesiono dane lokalne.');
+    } catch (migrationError) {
+      loadedUserId = null;
+      setMessage('Nie udało się odczytać lub przenieść faktur: ' + migrationError.message, true);
     }
   }
 
   async function writeState(state) {
     if (!currentUser) return;
+    const stateWithoutInvoices = Object.assign({}, state);
+    delete stateWithoutInvoices.invoices;
     const { error } = await client.from('app_states').upsert({
       user_id: currentUser.id,
-      state,
+      state: stateWithoutInvoices,
       updated_at: new Date().toISOString()
     });
     if (error) {
@@ -194,6 +254,35 @@
     }
     const { accountStatus } = elements();
     accountStatus.textContent = 'Zsynchronizowano';
+  }
+
+  async function createInvoice(invoice) {
+    if (!currentUser) return invoice;
+    const { data, error } = await client
+      .from('invoices')
+      .insert(invoiceToDatabase(invoice, currentUser.id))
+      .select()
+      .single();
+    if (error) throw error;
+    return invoiceFromDatabase(data);
+  }
+
+  async function updateInvoiceCategory(invoiceId, category) {
+    if (!currentUser) return;
+    const { error } = await client
+      .from('invoices')
+      .update({ category, updated_at: new Date().toISOString() })
+      .eq('id', invoiceId);
+    if (error) throw error;
+  }
+
+  async function deleteInvoice(invoiceId) {
+    if (!currentUser) return;
+    const { error } = await client
+      .from('invoices')
+      .delete()
+      .eq('id', invoiceId);
+    if (error) throw error;
   }
 
   function queueSave(state) {
@@ -254,5 +343,11 @@
     await handleSession(data.session);
   }
 
-  window.PewnikCloud = { init, queueSave };
+  window.PewnikCloud = {
+    init,
+    queueSave,
+    createInvoice,
+    updateInvoiceCategory,
+    deleteInvoice
+  };
 })();

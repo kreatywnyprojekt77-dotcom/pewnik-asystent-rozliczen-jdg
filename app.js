@@ -425,12 +425,12 @@
     });
   });
 
-  document.getElementById('invoiceForm').addEventListener('submit', event => {
+  document.getElementById('invoiceForm').addEventListener('submit', async event => {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
     const type = data.get('invoiceType');
-    state.invoices.unshift({
+    const localInvoice = {
       id: Date.now(),
       number: String(data.get('number')).trim(),
       date: String(data.get('date')),
@@ -439,32 +439,53 @@
       net: Number(data.get('net')),
       vatRate: Number(data.get('vat')),
       category: type === 'sale' ? String(data.get('category')) : null
-    });
-    persist();
-    renderCalculations();
-    closeModals();
-    showToast('Faktura została dodana i uwzględniona w obliczeniach.');
+    };
+
+    try {
+      const invoice = window.PewnikCloud
+        ? await window.PewnikCloud.createInvoice(localInvoice)
+        : localInvoice;
+      state.invoices.unshift(invoice);
+      persist();
+      renderCalculations();
+      closeModals();
+      showToast('Faktura została dodana i uwzględniona w obliczeniach.');
+    } catch (error) {
+      showToast('Nie udało się zapisać faktury: ' + error.message, 'error');
+    }
   });
 
-  document.getElementById('invoiceTableBody').addEventListener('change', event => {
+  document.getElementById('invoiceTableBody').addEventListener('change', async event => {
     const select = event.target.closest('[data-rate-invoice]');
     if (!select) return;
     const invoice = state.invoices.find(item => String(item.id) === select.dataset.rateInvoice);
     if (invoice) {
-      invoice.category = select.value;
-      persist();
-      renderCalculations();
-      showToast('Zmieniono stawkę ryczałtu i przeliczono podsumowanie.');
+      const previousCategory = invoice.category;
+      try {
+        if (window.PewnikCloud) await window.PewnikCloud.updateInvoiceCategory(invoice.id, select.value);
+        invoice.category = select.value;
+        persist();
+        renderCalculations();
+        showToast('Zmieniono stawkę ryczałtu i przeliczono podsumowanie.');
+      } catch (error) {
+        select.value = previousCategory;
+        showToast('Nie udało się zmienić faktury: ' + error.message, 'error');
+      }
     }
   });
 
-  document.getElementById('invoiceTableBody').addEventListener('click', event => {
+  document.getElementById('invoiceTableBody').addEventListener('click', async event => {
     const button = event.target.closest('[data-delete-invoice]');
     if (!button) return;
-    state.invoices = state.invoices.filter(invoice => String(invoice.id) !== button.dataset.deleteInvoice);
-    persist();
-    renderCalculations();
-    showToast('Faktura została usunięta.');
+    try {
+      if (window.PewnikCloud) await window.PewnikCloud.deleteInvoice(button.dataset.deleteInvoice);
+      state.invoices = state.invoices.filter(invoice => String(invoice.id) !== button.dataset.deleteInvoice);
+      persist();
+      renderCalculations();
+      showToast('Faktura została usunięta.');
+    } catch (error) {
+      showToast('Nie udało się usunąć faktury: ' + error.message, 'error');
+    }
   });
 
   document.getElementById('saveRules').addEventListener('click', () => {
