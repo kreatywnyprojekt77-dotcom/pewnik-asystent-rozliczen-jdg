@@ -340,3 +340,7 @@ Zadanie jest ukończone tylko wtedy, gdy:
 - [Ordynacja podatkowa — ISAP](https://isap.sejm.gov.pl/isap.Nsf/download.xsp/WDU19971370926/U/D19970926Lj.pdf)
 
 Źródła pomagają weryfikować reguły, ale nie upoważniają agenta do rozszerzania zakresu poza wymagania README.
+
+## Integracja KSeF TEST
+
+Na osobne zlecenie użytkownika projekt zawiera roboczą integrację z KSeF API 2.0 TEST przez Supabase Edge Function. Funkcja waliduje pełny format tokena KSeF 2.0, zgodność NIP-u aplikacji, sekretu i kontekstu tokena, a następnie uwierzytelnia się oraz importuje metadane faktur. Szczegóły uruchomienia i aktualny stan testów live opisują `INSTRUKCJA-KSEF.md` i `KSEF-WIP.md`.

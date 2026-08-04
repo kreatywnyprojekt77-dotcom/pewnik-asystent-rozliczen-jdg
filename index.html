@@ -229,6 +229,29 @@
           <div class="settings-section"><div><h2>Dane działalności</h2><p>Bez logowania dane pozostają w tej przeglądarce. Po połączeniu konta są również synchronizowane z Supabase.</p></div><div class="form-stack"><label>Nazwa firmy<input id="companyName" value="DEMO — Studio Testowe (dane syntetyczne)"></label><label>NIP<input id="companyNip" value="0000000000" inputmode="numeric"></label></div></div>
           <div class="settings-separator"></div>
           <div class="settings-section"><div><h2>Profil rozliczeń</h2><p>Prototyp obsługuje podstawowy wariant JDG.</p></div><div class="form-stack compact"><label class="select-label">Forma opodatkowania<select disabled><option>Ryczałt od przychodów ewidencjonowanych</option></select></label><label class="switch-row"><span><strong>Czynny podatnik VAT</strong><small>Rozliczenie miesięczne</small></span><input type="checkbox" checked disabled><span class="switch"></span></label><label class="switch-row"><span><strong>Standardowy ZUS</strong><small>Bez ulg i Małego ZUS Plus</small></span><input type="checkbox" checked disabled><span class="switch"></span></label></div></div>
+          <div class="settings-separator"></div>
+          <div class="settings-section ksef-settings">
+            <div>
+              <div class="settings-title-row"><h2>KSeF API</h2><span class="environment-badge">TEST</span></div>
+              <p>Bezpieczne połączenie przez Supabase Edge Function. Token KSeF nie jest wysyłany do przeglądarki.</p>
+              <a class="inline-link" href="https://api-test.ksef.mf.gov.pl/docs/v2" target="_blank" rel="noreferrer">Dokumentacja środowiska testowego ↗</a>
+            </div>
+            <div class="ksef-panel">
+              <div class="ksef-status-row">
+                <span class="ksef-status-dot" id="ksefStatusDot"></span>
+                <div><strong id="ksefStatusTitle">Wymaga logowania</strong><small id="ksefStatusDescription">Zaloguj się do Supabase, aby korzystać z integracji.</small></div>
+              </div>
+              <dl class="ksef-meta">
+                <div><dt>Środowisko</dt><dd>TEST</dd></div>
+                <div><dt>Ostatnia synchronizacja</dt><dd id="ksefLastSync">—</dd></div>
+              </dl>
+              <div class="ksef-actions">
+                <button class="secondary-button" id="testKsefConnection" type="button">Testuj połączenie</button>
+                <button class="primary-button" id="syncKsefInvoices" type="button">Pobierz faktury</button>
+              </div>
+              <p class="ksef-hint">Synchronizacja pobiera metadane faktur sprzedażowych i kosztowych z ostatnich 30 dni, a później działa przyrostowo.</p>
+            </div>
+          </div>
           <div class="settings-actions"><button class="primary-button" id="saveSettings">Zapisz ustawienia</button></div>
         </article>
       </section>

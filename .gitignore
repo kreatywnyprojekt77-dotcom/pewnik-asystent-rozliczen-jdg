@@ -12,3 +12,6 @@ Thumbs.db
 # Artefakty generowane lokalnie i podczas wdrozenia.
 dist/
 supabase-config.js
+
+# Lokalny stan Supabase CLI (link projektu, adresy połączeń i wersje usług).
+supabase/.temp/

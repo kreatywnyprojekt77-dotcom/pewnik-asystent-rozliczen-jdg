@@ -165,7 +165,13 @@
       type: row.invoice_type,
       net: Number(row.net_amount),
       vatRate: Number(row.vat_rate),
-      category: row.category
+      vatAmount: row.ksef_vat_amount == null ? Number(row.vat_amount) : Number(row.ksef_vat_amount),
+      gross: row.ksef_gross_amount == null ? Number(row.gross_amount) : Number(row.ksef_gross_amount),
+      category: row.category,
+      currency: row.currency || 'PLN',
+      source: row.source || 'manual',
+      ksefNumber: row.ksef_number,
+      ksefStatus: row.ksef_status
     };
   }
 
@@ -178,7 +184,9 @@
       invoice_type: invoice.type,
       net_amount: Number(invoice.net),
       vat_rate: Number(invoice.vatRate),
-      category: invoice.type === 'sale' ? invoice.category : null
+      category: invoice.type === 'sale' ? invoice.category : null,
+      source: 'manual',
+      currency: invoice.currency || 'PLN'
     };
   }
 
@@ -285,6 +293,52 @@
     if (error) throw error;
   }
 
+  async function ksefFunctionError(error) {
+    if (error && error.context && typeof error.context.json === 'function') {
+      try {
+        const payload = await error.context.json();
+        if (payload && payload.error) return new Error(payload.error);
+      } catch (_) {
+        // Supabase zwróci standardowy komunikat funkcji.
+      }
+    }
+    return error instanceof Error ? error : new Error('Nie udało się wywołać funkcji KSeF.');
+  }
+
+  async function invokeKsef(action, nip) {
+    if (!isConfigured || !client || !currentUser) {
+      throw new Error('Najpierw zaloguj się do Supabase.');
+    }
+    const { data, error } = await client.functions.invoke('ksef-sync', {
+      body: { action, nip }
+    });
+    if (error) throw await ksefFunctionError(error);
+    if (data && data.error) throw new Error(data.error);
+    return data;
+  }
+
+  async function getKsefConnection() {
+    if (!isConfigured || !client || !currentUser) return null;
+    const { data, error } = await client
+      .from('ksef_connections')
+      .select('environment,nip,status,last_sync_at,last_error')
+      .eq('user_id', currentUser.id)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  async function testKsefConnection(nip) {
+    return invokeKsef('status', nip);
+  }
+
+  async function syncKsefInvoices(nip) {
+    const result = await invokeKsef('sync', nip);
+    const invoices = await readInvoices();
+    app.replaceState(Object.assign({}, app.getState(), { invoices }));
+    return result;
+  }
+
   function queueSave(state) {
     if (!isConfigured || !currentUser) return;
     pendingState = JSON.parse(JSON.stringify(state));
@@ -304,6 +358,9 @@
     currentUser = nextUser;
     updateAccountUi();
     if (currentUser) await loadRemoteState(currentUser);
+    window.dispatchEvent(new CustomEvent('pewnik:cloud-session', {
+      detail: { signedIn: Boolean(currentUser) }
+    }));
   }
 
   async function init(appApi) {
@@ -348,6 +405,10 @@
     queueSave,
     createInvoice,
     updateInvoiceCategory,
-    deleteInvoice
+    deleteInvoice,
+    getKsefConnection,
+    testKsefConnection,
+    syncKsefInvoices,
+    isSignedIn: () => Boolean(currentUser)
   };
 })();

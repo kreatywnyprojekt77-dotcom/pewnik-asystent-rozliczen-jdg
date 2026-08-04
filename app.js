@@ -79,10 +79,10 @@
     renderCalculations();
   }
 
-  function money(value) {
+  function money(value, currency = 'PLN') {
     return new Intl.NumberFormat('pl-PL', {
       style: 'currency',
-      currency: 'PLN',
+      currency,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     }).format(Number(value) || 0);
@@ -131,8 +131,8 @@
     const costs = state.invoices.filter(invoice => invoice.type === 'cost');
     const revenue = sales.reduce((sum, invoice) => sum + Number(invoice.net), 0);
     const costsNet = costs.reduce((sum, invoice) => sum + Number(invoice.net), 0);
-    const salesVat = sales.reduce((sum, invoice) => sum + Number(invoice.net) * Number(invoice.vatRate) / 100, 0);
-    const costVat = costs.reduce((sum, invoice) => sum + Number(invoice.net) * Number(invoice.vatRate) / 100, 0);
+    const salesVat = sales.reduce((sum, invoice) => sum + invoiceVat(invoice), 0);
+    const costVat = costs.reduce((sum, invoice) => sum + invoiceVat(invoice), 0);
     const vat = Math.max(0, salesVat - costVat);
 
     const deduction = Math.min(revenue, Math.max(0, Number(state.rules.revenueDeduction)));
@@ -153,6 +153,13 @@
       deduction, taxableRevenue, categoryRows, pit, zus,
       total: pit + vat + zus
     };
+  }
+
+  function invoiceVat(invoice) {
+    if (invoice.vatAmount != null && Number.isFinite(Number(invoice.vatAmount))) {
+      return Number(invoice.vatAmount);
+    }
+    return Number(invoice.net) * Number(invoice.vatRate) / 100;
   }
 
   function setText(id, value) {
@@ -235,18 +242,27 @@
 
     tbody.innerHTML = filtered.map(invoice => {
       const date = new Intl.DateTimeFormat('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(invoice.date + 'T12:00:00'));
-      const vat = Number(invoice.net) * Number(invoice.vatRate) / 100;
+      const vat = invoiceVat(invoice);
+      const currency = invoice.currency || 'PLN';
+      const vatCurrency = invoice.source === 'ksef' ? 'PLN' : currency;
+      const origin = invoice.source === 'ksef' ? '<span class="ksef-origin">KSeF</span>' : '';
+      const ksefNumber = invoice.ksefNumber
+        ? '<span class="ksef-number" title="' + escapeHtml(invoice.ksefNumber) + '">' + escapeHtml(invoice.ksefNumber) + '</span>'
+        : '';
       const rateControl = invoice.type === 'sale'
-        ? '<select class="rate-select" data-rate-invoice="' + invoice.id + '"><option value="software" ' + (invoice.category === 'software' ? 'selected' : '') + '>Programowanie · ' + number(state.rules.software) + '%</option><option value="consulting" ' + (invoice.category === 'consulting' ? 'selected' : '') + '>Konsulting · ' + number(state.rules.consulting) + '%</option></select>'
+        ? '<select class="rate-select" data-rate-invoice="' + invoice.id + '"><option value="" disabled ' + (!invoice.category ? 'selected' : '') + '>Przypisz stawkę</option><option value="software" ' + (invoice.category === 'software' ? 'selected' : '') + '>Programowanie · ' + number(state.rules.software) + '%</option><option value="consulting" ' + (invoice.category === 'consulting' ? 'selected' : '') + '>Konsulting · ' + number(state.rules.consulting) + '%</option></select>'
         : '<span style="color:#9aa4b2">—</span>';
+      const deleteControl = invoice.source === 'ksef'
+        ? '<span class="ksef-origin" title="Dokument źródłowy pozostaje w KSeF">ŹRÓDŁO</span>'
+        : '<button class="icon-button delete-invoice" data-delete-invoice="' + invoice.id + '" aria-label="Usuń fakturę">×</button>';
       return '<tr>' +
-        '<td class="document-cell"><strong>' + escapeHtml(invoice.number) + '</strong><small>' + date + '</small></td>' +
+        '<td class="document-cell"><strong>' + escapeHtml(invoice.number) + origin + '</strong><small>' + date + '</small>' + ksefNumber + '</td>' +
         '<td>' + escapeHtml(invoice.contractor) + '</td>' +
         '<td><span class="type-badge ' + (invoice.type === 'cost' ? 'cost' : '') + '">' + (invoice.type === 'sale' ? 'Sprzedaż' : 'Koszt') + '</span></td>' +
-        '<td><strong>' + money(invoice.net) + '</strong></td>' +
-        '<td>' + money(vat) + '</td>' +
+        '<td><strong>' + money(invoice.net, currency) + '</strong></td>' +
+        '<td>' + money(vat, vatCurrency) + '</td>' +
         '<td>' + rateControl + '</td>' +
-        '<td><button class="icon-button delete-invoice" data-delete-invoice="' + invoice.id + '" aria-label="Usuń fakturę">×</button></td>' +
+        '<td>' + deleteControl + '</td>' +
       '</tr>';
     }).join('');
 
@@ -335,6 +351,72 @@
     setTextInput('companyNip', state.company.nip);
     setText('documentCompany', state.company.name);
     setText('documentNip', state.company.nip);
+  }
+
+  function formatKsefDate(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return new Intl.DateTimeFormat('pl-PL', {
+      dateStyle: 'medium',
+      timeStyle: 'short'
+    }).format(date);
+  }
+
+  function setKsefPanel(status, title, description, lastSync) {
+    const dot = document.getElementById('ksefStatusDot');
+    dot.className = 'ksef-status-dot' + (status ? ' ' + status : '');
+    setText('ksefStatusTitle', title);
+    setText('ksefStatusDescription', description);
+    setText('ksefLastSync', formatKsefDate(lastSync));
+    const signedIn = Boolean(window.PewnikCloud && window.PewnikCloud.isSignedIn());
+    document.getElementById('testKsefConnection').disabled = !signedIn || status === 'loading';
+    document.getElementById('syncKsefInvoices').disabled = !signedIn || status === 'loading';
+  }
+
+  async function refreshKsefPanel() {
+    if (!window.PewnikCloud || !window.PewnikCloud.isSignedIn()) {
+      setKsefPanel('', 'Wymaga logowania', 'Zaloguj się do Supabase, aby korzystać z integracji.', null);
+      return;
+    }
+    try {
+      const connection = await window.PewnikCloud.getKsefConnection();
+      if (!connection) {
+        setKsefPanel('', 'Gotowe do konfiguracji', 'Wdróż funkcję i ustaw sekrety KSEF_NIP oraz KSEF_TOKEN.', null);
+        return;
+      }
+      if (connection.status === 'error') {
+        setKsefPanel('error', 'Błąd połączenia', connection.last_error || 'Sprawdź konfigurację funkcji KSeF.', connection.last_sync_at);
+        return;
+      }
+      setKsefPanel('connected', 'Połączono z KSeF TEST', 'Kontekst NIP ' + connection.nip + '.', connection.last_sync_at);
+    } catch (error) {
+      setKsefPanel('error', 'Nie można odczytać konfiguracji', error.message, null);
+    }
+  }
+
+  async function runKsefAction(action) {
+    const nip = state.company.nip.replace(/\D/g, '');
+    if (nip.length !== 10 || nip === '0000000000') {
+      showToast('Najpierw wpisz syntetyczny, 10-cyfrowy NIP firmy i zapisz ustawienia.', 'info');
+      return;
+    }
+    const isSync = action === 'sync';
+    setKsefPanel('loading', isSync ? 'Pobieranie faktur…' : 'Testowanie połączenia…', 'Łączę się z testowym API KSeF.', null);
+    try {
+      const result = isSync
+        ? await window.PewnikCloud.syncKsefInvoices(nip)
+        : await window.PewnikCloud.testKsefConnection(nip);
+      if (isSync) {
+        showToast('KSeF: pobrano ' + result.imported + ' dokumentów (' + result.incoming + ' kosztowych, ' + result.outgoing + ' sprzedażowych).');
+      } else {
+        showToast('Połączenie z testowym KSeF działa.');
+      }
+      await refreshKsefPanel();
+    } catch (error) {
+      setKsefPanel('error', 'Błąd połączenia', error.message, null);
+      showToast(error.message, 'error');
+    }
   }
 
   document.querySelectorAll('.nav-item[data-view]').forEach(button => {
@@ -516,6 +598,10 @@
     showToast('Ustawienia działalności zostały zapisane.');
   });
 
+  document.getElementById('testKsefConnection').addEventListener('click', () => runKsefAction('status'));
+  document.getElementById('syncKsefInvoices').addEventListener('click', () => runKsefAction('sync'));
+  window.addEventListener('pewnik:cloud-session', refreshKsefPanel);
+
   document.querySelectorAll('.modal-close, .declaration-close').forEach(button => button.addEventListener('click', closeModals));
   document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
     backdrop.addEventListener('click', event => {
@@ -564,6 +650,7 @@
   renderCompany();
   renderTasks();
   renderCalculations();
+  refreshKsefPanel();
   if (window.PewnikCloud) {
     window.PewnikCloud.init({ getState, replaceState, showToast });
   }
