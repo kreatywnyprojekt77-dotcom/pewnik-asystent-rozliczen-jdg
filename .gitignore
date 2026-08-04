@@ -8,3 +8,7 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Artefakty generowane lokalnie i podczas wdrozenia.
+dist/
+supabase-config.js
