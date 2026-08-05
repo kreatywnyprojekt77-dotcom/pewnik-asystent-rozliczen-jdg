@@ -98,6 +98,13 @@ h2 { margin-bottom: 0; font-size: 16px; letter-spacing: -.25px; }
 .status-pill { display: inline-flex; align-items: center; justify-content: center; min-height: 23px; padding: 0 9px; border-radius: 12px; font-size: 10px; font-weight: 700; white-space: nowrap; }
 .status-pill.success { background: var(--green-soft); color: var(--green); }
 .status-pill.neutral { background: #f0f3f7; color: #667285; font-weight: 600; }
+.status-pill.warning { background: #fff3dc; color: #9a6116; }
+.status-pill.error { background: #fee9e9; color: #ad3030; }
+.calculation-finding { margin-top: 8px; padding: 9px 10px; border-radius: 7px; display: grid; gap: 3px; font-size: 9px; }
+.calculation-finding strong { font-size: 8px; letter-spacing: .04em; }
+.calculation-finding.warning { background: #fff7e8; color: #84561a; }
+.calculation-finding.error { background: #feeeee; color: #962e2e; }
+.calculation-finding.info { background: #eef5ff; color: #325d91; }
 
 .card { border: 1px solid var(--border); border-radius: 12px; background: var(--white); box-shadow: var(--shadow); }
 .summary-grid { display: grid; grid-template-columns: minmax(270px, .76fr) minmax(480px, 1.55fr); gap: 20px; align-items: start; }

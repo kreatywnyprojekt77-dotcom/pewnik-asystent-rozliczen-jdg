@@ -309,6 +309,8 @@ function invoiceRow(metadata: KsefInvoiceMetadata, userId: string, direction: "s
   const vatRate = metadata.netAmount
     ? Math.min(100, Math.max(0, Math.abs(metadata.vatAmount / metadata.netAmount * 100)))
     : 0;
+  const standardRate = [23, 8, 5, 0].find((rate) => Math.abs(vatRate - rate) < 0.005);
+  const isCorrection = String(metadata.invoiceType).toUpperCase().includes("KOR");
 
   return {
     user_id: userId,
@@ -318,6 +320,11 @@ function invoiceRow(metadata: KsefInvoiceMetadata, userId: string, direction: "s
     invoice_type: direction,
     net_amount: metadata.netAmount,
     vat_rate: Number(vatRate.toFixed(2)),
+    vat_code: standardRate == null ? "MIXED" : String(standardRate),
+    document_type: isCorrection ? "correction" : "invoice",
+    received_date: direction === "cost" && metadata.acquisitionDate
+      ? String(metadata.acquisitionDate).slice(0, 10)
+      : null,
     category: null,
     source: "ksef",
     ksef_number: metadata.ksefNumber,

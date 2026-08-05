@@ -65,7 +65,9 @@ const runtimeFiles = [
   'styles.css',
   'app.js',
   'supabase-sync.js',
-  'ryczalt-calculator.mjs'
+  'ryczalt-calculator.mjs',
+  'vat-calculator.mjs',
+  'vat-adapter.mjs'
 ];
 
 await Promise.all(runtimeFiles.map(file =>

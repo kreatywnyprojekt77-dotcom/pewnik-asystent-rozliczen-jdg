@@ -1,3 +1,6 @@
+import { calculateVat } from './vat-calculator.mjs';
+import { createVatInputFromInvoices } from './vat-adapter.mjs';
+
 (function () {
   'use strict';
 
@@ -12,18 +15,19 @@
   };
 
   const defaultInvoices = [
-    { id: 1, number: 'FV/06/2026/01', date: '2026-06-03', contractor: 'DEMO — Northbyte Sp. z o.o.', type: 'sale', net: 12000, vatRate: 23, category: 'software' },
-    { id: 2, number: 'FV/06/2026/02', date: '2026-06-10', contractor: 'DEMO — Orbit Systems S.A.', type: 'sale', net: 6800, vatRate: 23, category: 'software' },
-    { id: 3, number: 'FV/06/2026/03', date: '2026-06-18', contractor: 'DEMO — Metrum Digital Sp. z o.o.', type: 'sale', net: 5500, vatRate: 23, category: 'consulting' },
-    { id: 4, number: 'FV/06/2026/04', date: '2026-06-26', contractor: 'DEMO — BluePeak Polska Sp. z o.o.', type: 'sale', net: 4500, vatRate: 23, category: 'software' },
-    { id: 5, number: 'K/0626/184', date: '2026-06-12', contractor: 'DEMO — Cloud Hosting Polska', type: 'cost', net: 1800, vatRate: 23, category: null },
-    { id: 6, number: 'FVK/1220/06', date: '2026-06-21', contractor: 'DEMO — Biuro i Sprzęt Sp. z o.o.', type: 'cost', net: 800, vatRate: 23, category: null }
+    { id: 1, number: 'FV/06/2026/01', date: '2026-06-03', supplyDate: '2026-06-03', taxPointDate: '2026-06-03', contractor: 'DEMO — Northbyte Sp. z o.o.', type: 'sale', documentType: 'invoice', net: 12000, vatRate: 23, vatCode: '23', category: 'software' },
+    { id: 2, number: 'FV/06/2026/02', date: '2026-06-10', supplyDate: '2026-06-10', taxPointDate: '2026-06-10', contractor: 'DEMO — Orbit Systems S.A.', type: 'sale', documentType: 'invoice', net: 6800, vatRate: 23, vatCode: '23', category: 'software' },
+    { id: 3, number: 'FV/06/2026/03', date: '2026-06-18', supplyDate: '2026-06-18', taxPointDate: '2026-06-18', contractor: 'DEMO — Metrum Digital Sp. z o.o.', type: 'sale', documentType: 'invoice', net: 5500, vatRate: 23, vatCode: '23', category: 'consulting' },
+    { id: 4, number: 'FV/06/2026/04', date: '2026-06-26', supplyDate: '2026-06-26', taxPointDate: '2026-06-26', contractor: 'DEMO — BluePeak Polska Sp. z o.o.', type: 'sale', documentType: 'invoice', net: 4500, vatRate: 23, vatCode: '23', category: 'software' },
+    { id: 5, number: 'K/0626/184', date: '2026-06-12', receivedDate: '2026-06-12', contractor: 'DEMO — Cloud Hosting Polska', type: 'cost', documentType: 'invoice', net: 1800, vatRate: 23, vatCode: '23', vatDeductionPercent: 100, category: null },
+    { id: 6, number: 'FVK/1220/06', date: '2026-06-21', receivedDate: '2026-06-21', contractor: 'DEMO — Biuro i Sprzęt Sp. z o.o.', type: 'cost', documentType: 'invoice', net: 800, vatRate: 23, vatCode: '23', vatDeductionPercent: 100, category: null }
   ];
 
   const initialState = {
     period: '2026-06-01',
     invoices: defaultInvoices,
     rules: defaultRules,
+    vatSettings: { byPeriod: {} },
     tasks: { transfers: false, jpk: false, archive: false },
     company: { name: 'DEMO — Studio Testowe (dane syntetyczne)', nip: '0000000000' }
   };
@@ -33,6 +37,7 @@
     period: loaded.period || initialState.period,
     invoices: Array.isArray(loaded.invoices) ? loaded.invoices : defaultInvoices,
     rules: Object.assign({}, defaultRules, loaded.rules || {}),
+    vatSettings: Object.assign({}, initialState.vatSettings, loaded.vatSettings || {}),
     tasks: Object.assign({}, initialState.tasks, loaded.tasks || {}),
     company: Object.assign({}, initialState.company, loaded.company || {})
   };
@@ -65,6 +70,7 @@
     state.period = nextState.period || initialState.period;
     state.invoices = Array.isArray(nextState.invoices) ? nextState.invoices : defaultInvoices;
     state.rules = Object.assign({}, defaultRules, nextState.rules || {});
+    state.vatSettings = Object.assign({}, initialState.vatSettings, nextState.vatSettings || {});
     state.tasks = Object.assign({}, initialState.tasks, nextState.tasks || {});
     state.company = Object.assign({}, initialState.company, nextState.company || {});
     try {
@@ -109,6 +115,18 @@
     return form === 'long' ? capitalize(text) : text;
   }
 
+  function vatSettingsForPeriod() {
+    const period = state.period.slice(0, 7);
+    const legacySettings = state.vatSettings && (Number.isSafeInteger(state.vatSettings.openingCarryForwardGrosz) || state.vatSettings.excessMode)
+      ? state.vatSettings
+      : {};
+    return Object.assign(
+      { openingCarryForwardGrosz: 0, excessMode: 'CARRY_FORWARD' },
+      legacySettings,
+      state.vatSettings && state.vatSettings.byPeriod ? state.vatSettings.byPeriod[period] : null
+    );
+  }
+
   function formatDate(date, includeYear = true) {
     return new Intl.DateTimeFormat('pl-PL', includeYear
       ? { day: 'numeric', month: 'long', year: 'numeric' }
@@ -131,9 +149,18 @@
     const costs = state.invoices.filter(invoice => invoice.type === 'cost');
     const revenue = sales.reduce((sum, invoice) => sum + Number(invoice.net), 0);
     const costsNet = costs.reduce((sum, invoice) => sum + Number(invoice.net), 0);
-    const salesVat = sales.reduce((sum, invoice) => sum + invoiceVat(invoice), 0);
-    const costVat = costs.reduce((sum, invoice) => sum + invoiceVat(invoice), 0);
-    const vat = Math.max(0, salesVat - costVat);
+    const vatSettings = vatSettingsForPeriod();
+    const vatInput = createVatInputFromInvoices({
+      invoices: state.invoices,
+      settlementPeriod: state.period.slice(0, 7),
+      openingCarryForwardGrosz: vatSettings.openingCarryForwardGrosz,
+      excessDecision: { mode: vatSettings.excessMode }
+    });
+    const vatResult = calculateVat(vatInput);
+    const salesVat = vatResult.outputVatGrosz == null ? 0 : vatResult.outputVatGrosz / 100;
+    const costVat = vatResult.inputVatGrosz == null ? 0 : vatResult.inputVatGrosz / 100;
+    const deductibleVat = vatResult.deductibleInputVatGrosz == null ? 0 : vatResult.deductibleInputVatGrosz / 100;
+    const vat = vatResult.taxDueGrosz == null ? 0 : vatResult.taxDueGrosz / 100;
 
     const deduction = Math.min(revenue, Math.max(0, Number(state.rules.revenueDeduction)));
     const taxableRevenue = Math.max(0, revenue - deduction);
@@ -149,9 +176,9 @@
     const zus = Number(state.rules.socialZus) + Number(state.rules.healthZus);
 
     return {
-      sales, costs, revenue, costsNet, salesVat, costVat, vat,
+      sales, costs, revenue, costsNet, salesVat, costVat, deductibleVat, vat, vatResult,
       deduction, taxableRevenue, categoryRows, pit, zus,
-      total: pit + vat + zus
+      total: vatResult.status === 'INVALID' ? null : pit + vat + zus
     };
   }
 
@@ -188,18 +215,32 @@
 
   function renderCalculations() {
     const calc = calculations();
-    setText('grandTotal', money(calc.total));
-    setText('settlementTotal', money(calc.total));
+    const vatSettings = vatSettingsForPeriod();
+    setText('grandTotal', calc.total == null ? '—' : money(calc.total));
+    setText('settlementTotal', calc.total == null ? '—' : money(calc.total));
     setText('pitAmount', money(calc.pit));
-    setText('vatAmount', money(calc.vat));
+    setText('vatAmount', calc.vatResult.status === 'INVALID' ? '—' : money(calc.vat));
     setText('zusAmount', money(calc.zus));
     setText('revenueMetric', money(calc.revenue));
     setText('costMetric', money(calc.costsNet));
-    setText('vatMetric', money(calc.vat));
+    setText('vatMetric', calc.vatResult.status === 'INVALID' ? '—' : money(calc.vat));
     setText('salesCountMetric', calc.sales.length + ' ' + plural(calc.sales.length, 'faktura sprzedażowa', 'faktury sprzedażowe', 'faktur sprzedażowych'));
     setText('costCountMetric', calc.costs.length + ' ' + plural(calc.costs.length, 'faktura kosztowa', 'faktury kosztowe', 'faktur kosztowych'));
-    setText('documentVat', money(calc.vat));
-    setText('documentInvoiceCount', state.invoices.length + ' ' + plural(state.invoices.length, 'pozycja ewidencji', 'pozycje ewidencji', 'pozycji ewidencji'));
+    setText('documentVat', calc.vatResult.status === 'INVALID' ? '—' : money(calc.vat));
+    const vatDocumentCount = calc.vatResult.audit.includedEntryIds.length;
+    setText('documentInvoiceCount', vatDocumentCount + ' ' + plural(vatDocumentCount, 'pozycja ewidencji', 'pozycje ewidencji', 'pozycji ewidencji'));
+    const vatStatus = document.getElementById('vatStatus');
+    vatStatus.textContent = calc.vatResult.status === 'VERIFIED' ? (calc.vatResult.excessGrosz > 0 ? 'Nadwyżka' : 'Do zapłaty') : (calc.vatResult.status === 'INVALID' ? 'Błąd danych' : 'Sprawdź');
+    vatStatus.className = 'status-pill ' + (calc.vatResult.status === 'VERIFIED' ? 'neutral' : (calc.vatResult.status === 'INVALID' ? 'error' : 'warning'));
+    const invalidVat = calc.vatResult.status === 'INVALID';
+    const reviewVat = calc.vatResult.status === 'REVIEW_REQUIRED';
+    setText('calculationReadinessTitle', invalidVat ? 'Rozliczenie VAT wymaga poprawy danych' : (reviewVat ? 'Rozliczenie VAT wymaga sprawdzenia' : 'Rozliczenie jest gotowe'));
+    setText('calculationReadinessDescription', invalidVat ? 'Popraw błędy wskazane w szczegółach VAT przed przygotowaniem płatności lub JPK.' : (reviewVat ? 'Sprawdź ostrzeżenia VAT przed zatwierdzeniem rozliczenia.' : 'Nie znaleźliśmy braków ani sytuacji wymagających uwagi.'));
+    const overallStatus = document.getElementById('overallCalculationStatus');
+    overallStatus.textContent = invalidVat ? 'Błąd' : (reviewVat ? 'Sprawdź' : 'Gotowe');
+    overallStatus.className = 'status-pill ' + (invalidVat ? 'error' : (reviewVat ? 'warning' : 'success'));
+    document.getElementById('downloadDraft').disabled = invalidVat;
+    document.querySelectorAll('[data-task="transfers"], [data-task="jpk"]').forEach(input => { input.disabled = invalidVat; });
 
     const pitRows = calc.categoryRows.filter(row => row.revenue > 0).map(row => {
       const name = row.category === 'software' ? 'Usługi programistyczne' : 'Usługi konsultingowe';
@@ -213,8 +254,13 @@
 
     document.getElementById('vatDetails').innerHTML =
       '<div class="detail-row"><span>VAT należny ze sprzedaży</span><strong>' + money(calc.salesVat) + '</strong></div>' +
-      '<div class="detail-row"><span>VAT naliczony z kosztów</span><strong>− ' + money(calc.costVat) + '</strong></div>' +
-      '<div class="detail-row"><span>VAT do zapłaty</span><strong>' + money(calc.vat) + '</strong></div>';
+      '<div class="detail-row"><span>VAT naliczony z zakupów</span><strong>' + money(calc.costVat) + '</strong></div>' +
+      '<div class="detail-row"><span>VAT podlegający odliczeniu</span><strong>− ' + money(calc.deductibleVat) + '</strong></div>' +
+      '<div class="detail-row"><span>Nadwyżka z poprzedniego okresu</span><strong>− ' + money(vatSettings.openingCarryForwardGrosz / 100) + '</strong></div>' +
+      (calc.vatResult.excessGrosz > 0
+        ? '<div class="detail-row"><span>Nadwyżka VAT</span><strong>' + money(calc.vatResult.excessGrosz / 100) + '</strong></div><div class="detail-row"><span>' + (vatSettings.excessMode === 'REFUND' ? 'Wnioskowany zwrot' : 'Do przeniesienia') + '</span><strong>' + money((vatSettings.excessMode === 'REFUND' ? calc.vatResult.refundRequestedGrosz : calc.vatResult.carryForwardGrosz) / 100) + '</strong></div>'
+        : '<div class="detail-row"><span>VAT do zapłaty</span><strong>' + money(calc.vat) + '</strong></div>') +
+      calc.vatResult.findings.map(item => '<div class="calculation-finding ' + item.severity + '"><strong>' + escapeHtml(item.code) + '</strong><span>' + escapeHtml(item.message) + '</span></div>').join('');
 
     document.getElementById('zusDetails').innerHTML =
       '<div class="detail-row"><span>Składki społeczne</span><strong>' + money(state.rules.socialZus) + '</strong></div>' +
@@ -251,7 +297,7 @@
         : '';
       const rateControl = invoice.type === 'sale'
         ? '<select class="rate-select" data-rate-invoice="' + invoice.id + '"><option value="" disabled ' + (!invoice.category ? 'selected' : '') + '>Przypisz stawkę</option><option value="software" ' + (invoice.category === 'software' ? 'selected' : '') + '>Programowanie · ' + number(state.rules.software) + '%</option><option value="consulting" ' + (invoice.category === 'consulting' ? 'selected' : '') + '>Konsulting · ' + number(state.rules.consulting) + '%</option></select>'
-        : '<span style="color:#9aa4b2">—</span>';
+        : '<select class="rate-select" data-vat-deduction-invoice="' + invoice.id + '"><option value="" disabled ' + (invoice.vatDeductionPercent == null ? 'selected' : '') + '>Potwierdź odliczenie VAT</option><option value="100" ' + (Number(invoice.vatDeductionPercent) === 100 ? 'selected' : '') + '>VAT 100%</option><option value="50" ' + (Number(invoice.vatDeductionPercent) === 50 ? 'selected' : '') + '>VAT 50%</option><option value="0" ' + (Number(invoice.vatDeductionPercent) === 0 ? 'selected' : '') + '>VAT 0%</option></select>';
       const deleteControl = invoice.source === 'ksef'
         ? '<span class="ksef-origin" title="Dokument źródłowy pozostaje w KSeF">ŹRÓDŁO</span>'
         : '<button class="icon-button delete-invoice" data-delete-invoice="' + invoice.id + '" aria-label="Usuń fakturę">×</button>';
@@ -313,12 +359,15 @@
   }
 
   function fillRuleForm() {
+    const vatSettings = vatSettingsForPeriod();
     setTextInput('rateSoftware', state.rules.software);
     setTextInput('rateConsulting', state.rules.consulting);
     setTextInput('vatRate', state.rules.vatRate);
     setTextInput('revenueDeduction', state.rules.revenueDeduction);
     setTextInput('socialZus', state.rules.socialZus);
     setTextInput('healthZus', state.rules.healthZus);
+    setTextInput('openingVatCarry', vatSettings.openingCarryForwardGrosz / 100);
+    document.getElementById('vatExcessMode').value = vatSettings.excessMode;
   }
 
   function setTextInput(id, value) {
@@ -331,11 +380,17 @@
     state.rules = {
       software: value('rateSoftware'),
       consulting: value('rateConsulting'),
-      vatRate: value('vatRate'),
+      vatRate: state.rules.vatRate,
       revenueDeduction: value('revenueDeduction'),
       socialZus: value('socialZus'),
       healthZus: value('healthZus')
     };
+    const byPeriod = Object.assign({}, state.vatSettings.byPeriod || {});
+    byPeriod[state.period.slice(0, 7)] = {
+      openingCarryForwardGrosz: Math.round(value('openingVatCarry') * 100),
+      excessMode: document.getElementById('vatExcessMode').value
+    };
+    state.vatSettings = { byPeriod };
   }
 
   function renderTasks() {
@@ -455,6 +510,8 @@
     date.setMonth(date.getMonth() + offset);
     state.period = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-01';
     updatePeriod();
+    fillRuleForm();
+    renderCalculations();
     persist();
     showToast('Wybrano okres: ' + periodName(), 'info');
   }
@@ -472,7 +529,12 @@
   });
 
   document.getElementById('copyTotal').addEventListener('click', async () => {
-    const amount = calculations().total.toFixed(2).replace('.', ',');
+    const total = calculations().total;
+    if (total == null) {
+      showToast('Najpierw popraw błędy kalkulatora VAT.', 'error');
+      return;
+    }
+    const amount = total.toFixed(2).replace('.', ',');
     try {
       await navigator.clipboard.writeText(amount);
       showToast('Skopiowano kwotę ' + amount + ' zł.');
@@ -496,7 +558,10 @@
     const form = document.getElementById('invoiceForm');
     form.reset();
     form.elements.date.value = state.period.slice(0, 7) + '-15';
+    form.elements.vatEffectiveDate.value = state.period.slice(0, 7) + '-15';
+    setText('vatEffectiveDateText', 'Data sprzedaży / wykonania usługi');
     document.querySelector('.rate-field').style.display = '';
+    document.querySelector('.vat-deduction-field').style.display = 'none';
     openModal('invoiceModal');
     setTimeout(() => form.elements.number.focus(), 100);
   });
@@ -504,6 +569,9 @@
   document.querySelectorAll('input[name="invoiceType"]').forEach(input => {
     input.addEventListener('change', () => {
       document.querySelector('.rate-field').style.display = input.value === 'sale' && input.checked ? '' : (document.querySelector('input[name="invoiceType"]:checked').value === 'cost' ? 'none' : '');
+      const isCost = document.querySelector('input[name="invoiceType"]:checked').value === 'cost';
+      document.querySelector('.vat-deduction-field').style.display = isCost ? '' : 'none';
+      setText('vatEffectiveDateText', isCost ? 'Data otrzymania' : 'Data sprzedaży / wykonania usługi');
     });
   });
 
@@ -512,14 +580,29 @@
     const form = event.currentTarget;
     const data = new FormData(form);
     const type = data.get('invoiceType');
+    const documentType = String(data.get('documentType'));
+    const net = Number(data.get('net'));
+    if (documentType !== 'correction' && net < 0) {
+      showToast('Ujemna kwota jest dozwolona wyłącznie dla korekty.', 'error');
+      return;
+    }
+    const vatCode = String(data.get('vat'));
+    const vatRate = Number(vatCode) || 0;
+    const effectiveDate = String(data.get('vatEffectiveDate'));
     const localInvoice = {
       id: Date.now(),
       number: String(data.get('number')).trim(),
       date: String(data.get('date')),
       contractor: String(data.get('contractor')).trim(),
       type,
-      net: Number(data.get('net')),
-      vatRate: Number(data.get('vat')),
+      net,
+      vatRate,
+      vatCode,
+      documentType,
+      supplyDate: type === 'sale' ? effectiveDate : null,
+      taxPointDate: type === 'sale' ? effectiveDate : null,
+      receivedDate: type === 'cost' ? effectiveDate : null,
+      vatDeductionPercent: type === 'cost' ? Number(data.get('vatDeductionPercent')) : null,
       category: type === 'sale' ? String(data.get('category')) : null
     };
 
@@ -539,9 +622,9 @@
 
   document.getElementById('invoiceTableBody').addEventListener('change', async event => {
     const select = event.target.closest('[data-rate-invoice]');
-    if (!select) return;
-    const invoice = state.invoices.find(item => String(item.id) === select.dataset.rateInvoice);
-    if (invoice) {
+    if (select) {
+      const invoice = state.invoices.find(item => String(item.id) === select.dataset.rateInvoice);
+      if (!invoice) return;
       const previousCategory = invoice.category;
       try {
         if (window.PewnikCloud) await window.PewnikCloud.updateInvoiceCategory(invoice.id, select.value);
@@ -552,6 +635,25 @@
       } catch (error) {
         select.value = previousCategory;
         showToast('Nie udało się zmienić faktury: ' + error.message, 'error');
+      }
+      return;
+    }
+    const vatSelect = event.target.closest('[data-vat-deduction-invoice]');
+    if (vatSelect) {
+      const invoice = state.invoices.find(item => String(item.id) === vatSelect.dataset.vatDeductionInvoice);
+      if (!invoice) return;
+      const previousPercent = invoice.vatDeductionPercent;
+      const percent = Number(vatSelect.value);
+      try {
+        if (window.PewnikCloud) await window.PewnikCloud.updateInvoiceVatDeduction(invoice.id, percent);
+        invoice.vatDeductionPercent = percent;
+        invoice.deductibleVatGrosz = null;
+        persist();
+        renderCalculations();
+        showToast('Potwierdzono zakres odliczenia VAT i przeliczono podsumowanie.');
+      } catch (error) {
+        vatSelect.value = previousPercent == null ? '' : String(previousPercent);
+        showToast('Nie udało się zapisać decyzji VAT: ' + error.message, 'error');
       }
     }
   });
@@ -579,6 +681,7 @@
 
   document.getElementById('restoreRules').addEventListener('click', () => {
     state.rules = Object.assign({}, defaultRules);
+    state.vatSettings = Object.assign({}, initialState.vatSettings);
     fillRuleForm();
     persist();
     renderCalculations();
@@ -622,6 +725,10 @@
 
   document.getElementById('downloadDraft').addEventListener('click', () => {
     const calc = calculations();
+    if (calc.vatResult.status === 'INVALID') {
+      showToast('Nie można przygotować JPK przy błędnym wyniku VAT.', 'error');
+      return;
+    }
     const content = [
       'PEWNIK — WERSJA ROBOCZA DOKUMENTU',
       'JPK_V7M — podgląd danych',
@@ -632,7 +739,10 @@
       'Liczba dokumentów: ' + state.invoices.length,
       'VAT należny: ' + money(calc.salesVat),
       'VAT naliczony: ' + money(calc.costVat),
+      'VAT podlegający odliczeniu: ' + money(calc.deductibleVat),
       'VAT do zapłaty: ' + money(calc.vat),
+      'Nadwyżka do przeniesienia: ' + money((calc.vatResult.carryForwardGrosz || 0) / 100),
+      'Status kalkulatora VAT: ' + calc.vatResult.status,
       '',
       'To plik demonstracyjny, nie jest deklaracją gotową do wysyłki.'
     ].join('\r\n');
@@ -654,4 +764,5 @@
   if (window.PewnikCloud) {
     window.PewnikCloud.init({ getState, replaceState, showToast });
   }
+  window.PEWNIK_APP_READY = true;
 })();

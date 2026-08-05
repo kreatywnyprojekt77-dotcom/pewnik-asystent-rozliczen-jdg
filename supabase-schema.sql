@@ -80,6 +80,43 @@ alter table public.invoices add column if not exists ksef_acquisition_date times
 alter table public.invoices add column if not exists ksef_permanent_storage_date timestamptz;
 alter table public.invoices add column if not exists invoice_hash text;
 alter table public.invoices add column if not exists ksef_metadata jsonb;
+alter table public.invoices add column if not exists vat_code text;
+alter table public.invoices add column if not exists document_type text not null default 'invoice';
+alter table public.invoices add column if not exists supply_date date;
+alter table public.invoices add column if not exists tax_point_date date;
+alter table public.invoices add column if not exists received_date date;
+alter table public.invoices add column if not exists accounting_period text;
+alter table public.invoices add column if not exists vat_deduction_percent integer;
+alter table public.invoices add column if not exists deductible_vat_amount numeric(14, 2);
+alter table public.invoices add column if not exists vat_lines jsonb;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'invoices_document_type_check'
+      and conrelid = 'public.invoices'::regclass
+  ) then
+    alter table public.invoices add constraint invoices_document_type_check
+      check (document_type in ('invoice', 'correction'));
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'invoices_vat_deduction_percent_check'
+      and conrelid = 'public.invoices'::regclass
+  ) then
+    alter table public.invoices add constraint invoices_vat_deduction_percent_check
+      check (vat_deduction_percent is null or vat_deduction_percent in (0, 50, 100));
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'invoices_vat_code_check'
+      and conrelid = 'public.invoices'::regclass
+  ) then
+    alter table public.invoices add constraint invoices_vat_code_check
+      check (vat_code is null or vat_code in ('23', '8', '5', '0', 'ZW', 'NP', 'MIXED'));
+  end if;
+end $$;
 
 -- Numery własne faktur nie są globalnie unikalne (dwóch dostawców może użyć
 -- tego samego numeru). Deduplikacja importu odbywa się po numerze KSeF.
