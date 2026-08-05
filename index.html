@@ -20,6 +20,10 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></svg>
           Podsumowanie
         </button>
+        <button class="nav-item" data-view="verification">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11 11 13 15 8M5 4h14v16H5V4Zm4-2h6v4H9V2Z"/></svg>
+          Weryfikacja <span class="nav-count" id="verificationCountBadge">0</span>
+        </button>
         <button class="nav-item" data-view="invoices">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6V2Zm8 2v4h4M9 13h8M9 17h8M9 9h2"/></svg>
           Faktury <span class="nav-count" id="invoiceCountBadge">6</span>
@@ -88,6 +92,7 @@
         <div class="ready-banner">
           <div class="ready-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 12 3 3 7-7"/></svg></div>
           <div><strong id="calculationReadinessTitle">Rozliczenie jest gotowe</strong><span id="calculationReadinessDescription">Nie znaleźliśmy braków ani sytuacji wymagających uwagi.</span></div>
+          <button type="button" class="secondary-button verification-banner-button" data-view-target="verification">Zweryfikuj rozliczenie</button>
           <span class="status-pill success" id="overallCalculationStatus">Gotowe</span>
         </div>
 
@@ -160,6 +165,65 @@
         <p class="prototype-note"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 5v5M12 16h.01"/></svg>To prototyp edukacyjny. Kwoty opierają się na przykładowych, ręcznie ustawionych regułach — przed płatnością zweryfikuj je z aktualnymi przepisami.</p>
       </section>
 
+      <section class="view" id="verificationView">
+        <div class="page-heading verification-heading">
+          <div><p class="eyebrow">Centrum weryfikacji</p><h1>Dokończ rozliczenie krok po kroku</h1><p>Stałe dane działalności potwierdzasz raz. Dokumenty i odliczenia sprawdzasz dla wybranego miesiąca.</p></div>
+          <div class="verification-heading-status"><span class="status-pill warning" id="verificationOverallStatus">Do weryfikacji</span><small><strong id="verificationOpenCount">0</strong> otwartych zadań</small></div>
+        </div>
+
+        <article class="card verification-intro">
+          <span class="verification-intro-icon">1×</span>
+          <div><strong>PKWiU jest częścią profilu działalności</strong><p>Przypisz klasyfikację do kategorii usługi i potwierdź ją jeden raz. Aplikacja będzie stosować ją automatycznie w każdym miesiącu, dopóki obowiązuje wskazana konfiguracja.</p></div>
+        </article>
+
+        <div class="verification-section-heading"><div><p class="eyebrow">Konfiguracja stała</p><h2>Profil kategorii ryczałtu</h2></div><span>Zapisywany lokalnie i w Supabase</span></div>
+        <div class="profile-grid">
+          <article class="card profile-verification-card" id="softwareProfileCard">
+            <div class="profile-verification-top"><div><span class="profile-icon">&lt;/&gt;</span><div><strong>Usługi programistyczne</strong><small>Stosowane do faktur przypisanych do kategorii „Programowanie”</small></div></div><span class="status-pill warning" id="softwareProfileStatus">Uzupełnij raz</span></div>
+            <div class="verification-form-grid">
+              <label>PKWiU<input id="softwareProfilePkwiu" placeholder="Wpisz potwierdzoną klasyfikację"></label>
+              <label>Stawka ryczałtu<div class="input-suffix"><input id="softwareProfileRate" type="number" min="0" step="0.1"><span>%</span></div></label>
+              <label class="span-2">Podstawa lub źródło potwierdzenia<input id="softwareProfileLegalBasis" placeholder="Np. interpretacja, konsultacja księgowa lub przepis"></label>
+              <label>Obowiązuje od<input id="softwareProfileValidFrom" type="month"></label>
+              <label>Obowiązuje do<input id="softwareProfileValidTo" type="month"></label>
+            </div>
+            <label class="verification-confirm"><input id="softwareProfileConfirmed" type="checkbox"><span>Potwierdzam, że klasyfikacja i stawka zostały zweryfikowane dla tej działalności.</span></label>
+          </article>
+
+          <article class="card profile-verification-card" id="consultingProfileCard">
+            <div class="profile-verification-top"><div><span class="profile-icon">?</span><div><strong>Usługi konsultingowe</strong><small>Stosowane do faktur przypisanych do kategorii „Konsulting”</small></div></div><span class="status-pill warning" id="consultingProfileStatus">Uzupełnij raz</span></div>
+            <div class="verification-form-grid">
+              <label>PKWiU<input id="consultingProfilePkwiu" placeholder="Wpisz potwierdzoną klasyfikację"></label>
+              <label>Stawka ryczałtu<div class="input-suffix"><input id="consultingProfileRate" type="number" min="0" step="0.1"><span>%</span></div></label>
+              <label class="span-2">Podstawa lub źródło potwierdzenia<input id="consultingProfileLegalBasis" placeholder="Np. interpretacja, konsultacja księgowa lub przepis"></label>
+              <label>Obowiązuje od<input id="consultingProfileValidFrom" type="month"></label>
+              <label>Obowiązuje do<input id="consultingProfileValidTo" type="month"></label>
+            </div>
+            <label class="verification-confirm"><input id="consultingProfileConfirmed" type="checkbox"><span>Potwierdzam, że klasyfikacja i stawka zostały zweryfikowane dla tej działalności.</span></label>
+          </article>
+        </div>
+        <div class="profile-actions"><p>Aplikacja nie zgaduje PKWiU. Wprowadź klasyfikację potwierdzoną dla rzeczywistego zakresu usług.</p><button type="button" class="primary-button" id="saveCategoryProfiles">Zapisz profil działalności</button></div>
+
+        <div class="verification-section-heading period-verification-heading"><div><p class="eyebrow">Wybrany okres</p><h2 id="verificationPeriodName">Czerwiec 2026</h2></div><span>Te kroki mogą zmieniać się co miesiąc</span></div>
+        <div class="verification-task-list">
+          <article class="card verification-task" id="verificationSalesTask">
+            <span class="task-state-icon">✓</span>
+            <div class="verification-task-copy"><strong>Dokumenty sprzedaży</strong><span id="verificationSalesCount">0 faktur sprzedażowych</span><p id="verificationSalesHelp">Sprawdzamy dokumenty dla wybranego miesiąca.</p></div>
+            <div class="verification-task-actions"><button type="button" class="secondary-button" data-view-target="invoices">Przejdź do faktur</button><button type="button" class="text-button" id="confirmNoSales">Potwierdź brak sprzedaży</button></div>
+          </article>
+          <article class="card verification-task" id="verificationDeductionTask">
+            <span class="task-state-icon">✓</span>
+            <div class="verification-task-copy"><strong>Odliczenie od przychodu</strong><span id="verificationDeductionValue">0,00 zł</span><p id="verificationDeductionHelp">Kwota dotyczy tylko wybranego miesiąca.</p></div>
+            <div class="verification-task-control"><div class="input-suffix"><input id="verificationDeduction" type="number" min="0" step="0.01"><span>zł</span></div><button type="button" class="secondary-button" id="savePeriodDeduction">Zapisz i przelicz</button></div>
+          </article>
+          <article class="card verification-task" id="verificationVatTask">
+            <span class="task-state-icon">✓</span>
+            <div class="verification-task-copy"><strong>Decyzje dotyczące VAT</strong><span id="verificationVatStatus">Gotowe</span><p>Potwierdź zakres odliczenia VAT przy fakturach kosztowych wymagających decyzji.</p></div>
+            <button type="button" class="secondary-button" data-view-target="invoices">Sprawdź faktury</button>
+          </article>
+        </div>
+      </section>
+
       <section class="view" id="invoicesView">
         <div class="page-heading">
           <div><p class="eyebrow">Dokumenty źródłowe</p><h1>Faktury</h1><p>Sprzedaż i koszty uwzględniane w rozliczeniu za wybrany miesiąc.</p></div>
@@ -202,7 +266,6 @@
             <div class="form-grid">
               <label>Usługi programistyczne<div class="input-suffix"><input type="number" step="0.1" min="0" id="rateSoftware"><span>%</span></div></label>
               <label>Usługi konsultingowe<div class="input-suffix"><input type="number" step="0.1" min="0" id="rateConsulting"><span>%</span></div></label>
-              <label>Odliczenie od przychodu<div class="input-suffix"><input type="number" step="0.01" min="0" id="revenueDeduction"><span>zł</span></div></label>
             </div>
             <div class="rule-separator"></div>
             <div class="section-heading"><div><p class="eyebrow">VAT</p><h2>Rozliczenie nadwyżki</h2></div><span class="version-tag">PL-VAT-2026.1</span></div>

@@ -11,9 +11,33 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
     software: 12,
     consulting: 15,
     vatRate: 23,
-    revenueDeduction: 5500,
     socialZus: 1773.96,
     healthZus: 769.43
+  };
+
+  const defaultCategoryProfiles = {
+    software: {
+      name: 'Usługi programistyczne',
+      pkwiu: '',
+      legalBasis: '',
+      validFrom: '2026-01',
+      validTo: '2026-12',
+      decision: null
+    },
+    consulting: {
+      name: 'Usługi konsultingowe',
+      pkwiu: '',
+      legalBasis: '',
+      validFrom: '2026-01',
+      validTo: '2026-12',
+      decision: null
+    }
+  };
+
+  const defaultRyczaltSettings = {
+    byPeriod: {
+      '2026-06': { deductionGrosz: 550000 }
+    }
   };
 
   const defaultInvoices = [
@@ -29,6 +53,8 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
     period: '2026-06-01',
     invoices: defaultInvoices,
     rules: defaultRules,
+    categoryProfiles: defaultCategoryProfiles,
+    ryczaltSettings: defaultRyczaltSettings,
     vatSettings: { byPeriod: {} },
     tasks: { transfers: false, jpk: false, archive: false },
     company: { name: 'DEMO — Studio Testowe (dane syntetyczne)', nip: '0000000000' }
@@ -39,6 +65,8 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
     period: loaded.period || initialState.period,
     invoices: Array.isArray(loaded.invoices) ? loaded.invoices : defaultInvoices,
     rules: Object.assign({}, defaultRules, loaded.rules || {}),
+    categoryProfiles: mergeCategoryProfiles(loaded.categoryProfiles),
+    ryczaltSettings: mergePeriodSettings(defaultRyczaltSettings, loaded.ryczaltSettings),
     vatSettings: Object.assign({}, initialState.vatSettings, loaded.vatSettings || {}),
     tasks: Object.assign({}, initialState.tasks, loaded.tasks || {}),
     company: Object.assign({}, initialState.company, loaded.company || {})
@@ -52,6 +80,21 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
     } catch (_) {
       return {};
     }
+  }
+
+  function mergeCategoryProfiles(profiles) {
+    const source = profiles && typeof profiles === 'object' ? profiles : {};
+    return Object.fromEntries(Object.keys(defaultCategoryProfiles).map(id => [
+      id,
+      Object.assign({}, defaultCategoryProfiles[id], source[id] || {})
+    ]));
+  }
+
+  function mergePeriodSettings(defaults, settings) {
+    const source = settings && typeof settings === 'object' ? settings : {};
+    return {
+      byPeriod: Object.assign({}, defaults.byPeriod, source.byPeriod || {})
+    };
   }
 
   function persist() {
@@ -72,6 +115,8 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
     state.period = nextState.period || initialState.period;
     state.invoices = Array.isArray(nextState.invoices) ? nextState.invoices : defaultInvoices;
     state.rules = Object.assign({}, defaultRules, nextState.rules || {});
+    state.categoryProfiles = mergeCategoryProfiles(nextState.categoryProfiles);
+    state.ryczaltSettings = mergePeriodSettings(defaultRyczaltSettings, nextState.ryczaltSettings);
     state.vatSettings = Object.assign({}, initialState.vatSettings, nextState.vatSettings || {});
     state.tasks = Object.assign({}, initialState.tasks, nextState.tasks || {});
     state.company = Object.assign({}, initialState.company, nextState.company || {});
@@ -82,6 +127,7 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
     }
     updatePeriod();
     fillRuleForm();
+    fillVerificationForm();
     renderCompany();
     renderTasks();
     renderCalculations();
@@ -145,6 +191,16 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
     );
   }
 
+  function ryczaltSettingsForPeriod() {
+    const period = state.period.slice(0, 7);
+    return Object.assign(
+      { deductionGrosz: 0 },
+      state.ryczaltSettings && state.ryczaltSettings.byPeriod
+        ? state.ryczaltSettings.byPeriod[period]
+        : null
+    );
+  }
+
   function formatDate(date, includeYear = true) {
     return new Intl.DateTimeFormat('pl-PL', includeYear
       ? { day: 'numeric', month: 'long', year: 'numeric' }
@@ -180,11 +236,12 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
     const ryczaltInput = createRyczaltInputFromInvoices({
       invoices: state.invoices,
       settlementPeriod,
-      deductionGrosz: toGrosz(state.rules.revenueDeduction),
+      deductionGrosz: ryczaltSettingsForPeriod().deductionGrosz,
       ratesPercent: {
         software: state.rules.software,
         consulting: state.rules.consulting
-      }
+      },
+      categoryMetadata: state.categoryProfiles
     });
     const pitResult = calculateRyczalt(ryczaltInput);
     const includedPitIds = new Set(pitResult.audit.inputRevenueIds.map(String));
@@ -246,6 +303,7 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
     const reviewVat = calc.vatResult.status === 'REVIEW_REQUIRED';
     const invalidOverall = invalidPit || invalidVat;
     const reviewOverall = !invalidOverall && (reviewPit || reviewVat);
+    const blockedOverall = invalidOverall || calc.pit == null;
     setText('grandTotal', calc.total == null ? '—' : money(calc.total));
     setText('settlementTotal', calc.total == null ? '—' : money(calc.total));
     setText('pitAmount', calc.pit == null ? '—' : money(calc.pit));
@@ -267,12 +325,13 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
     vatStatus.textContent = calc.vatResult.status === 'VERIFIED' ? (calc.vatResult.excessGrosz > 0 ? 'Nadwyżka' : 'Do zapłaty') : (calc.vatResult.status === 'INVALID' ? 'Błąd danych' : 'Do weryfikacji');
     vatStatus.className = 'status-pill ' + (calc.vatResult.status === 'VERIFIED' ? 'neutral' : (calc.vatResult.status === 'INVALID' ? 'error' : 'warning'));
     setText('calculationReadinessTitle', invalidOverall ? 'Rozliczenie wymaga poprawy danych' : (reviewOverall ? 'Rozliczenie wymaga sprawdzenia' : 'Rozliczenie jest gotowe'));
-    setText('calculationReadinessDescription', invalidOverall ? 'Popraw błędy wskazane w szczegółach ryczałtu lub VAT przed przygotowaniem płatności.' : (reviewOverall ? 'Sprawdź ostrzeżenia kalkulatorów przed zatwierdzeniem rozliczenia.' : 'Nie znaleźliśmy braków ani sytuacji wymagających uwagi.'));
+    setText('calculationReadinessDescription', invalidOverall ? 'Popraw dane wskazane w Centrum weryfikacji przed przygotowaniem płatności.' : (reviewOverall ? 'Przejdź przez krótką listę zadań i potwierdź brakujące informacje.' : 'Nie znaleźliśmy braków ani sytuacji wymagających uwagi.'));
     const overallStatus = document.getElementById('overallCalculationStatus');
     overallStatus.textContent = invalidOverall ? 'Błąd' : (reviewOverall ? 'Do weryfikacji' : 'Gotowe');
     overallStatus.className = 'status-pill ' + (invalidOverall ? 'error' : (reviewOverall ? 'warning' : 'success'));
+    document.querySelector('.ready-banner').classList.toggle('warning', invalidOverall || reviewOverall);
     document.getElementById('downloadDraft').disabled = invalidVat;
-    document.querySelector('[data-task="transfers"]').disabled = invalidOverall;
+    document.querySelector('[data-task="transfers"]').disabled = blockedOverall;
     document.querySelector('[data-task="jpk"]').disabled = invalidVat;
 
     const pitCategoryRows = calc.pitResult.categoryRows.filter(row => row.currentRevenueGrosz > 0).map(row => {
@@ -282,14 +341,12 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
     const pitRateRows = calc.pitResult.rateRows.map(row =>
       '<div class="detail-row"><span>Podstawa ' + money(row.baseBeforeRoundingGrosz / 100) + ' → ' + money(row.roundedBasePln) + ' × ' + number(row.rateBasisPoints / 100) + '%</span><strong>' + exactTax(row.taxExact.units) + '</strong></div>'
     ).join('');
-    const pitFindings = calc.pitResult.findings.map(item =>
-      '<div class="calculation-finding ' + item.severity + '"><strong>' + escapeHtml(item.code) + '</strong><span>' + escapeHtml(item.message) + '</span></div>'
-    ).join('');
+    const pitFindings = findingSummary(calc.pitResult.findings, 'pit');
     document.getElementById('pitDetails').innerHTML =
       '<div class="detail-row"><span>Przychód netto</span><strong>' + (calc.revenue == null ? '—' : money(calc.revenue)) + '</strong></div>' +
       '<div class="detail-row"><span>Odliczenie od przychodu</span><strong>' + (calc.deduction == null ? '—' : '− ' + money(calc.deduction)) + '</strong></div>' +
       pitCategoryRows + pitRateRows +
-      '<div class="detail-row"><span>' + (reviewPit ? 'Ryczałt — wynik roboczy' : 'Ryczałt do zapłaty') + '</span><strong>' + (calc.pit == null ? '—' : money(calc.pit)) + '</strong></div>' +
+      '<div class="detail-row"><span>' + (reviewPit ? 'Ryczałt — do weryfikacji' : 'Ryczałt do zapłaty') + '</span><strong>' + (calc.pit == null ? '—' : money(calc.pit)) + '</strong></div>' +
       pitFindings;
 
     document.getElementById('vatDetails').innerHTML =
@@ -300,7 +357,7 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
       (calc.vatResult.excessGrosz > 0
         ? '<div class="detail-row"><span>Nadwyżka VAT</span><strong>' + money(calc.vatResult.excessGrosz / 100) + '</strong></div><div class="detail-row"><span>' + (vatSettings.excessMode === 'REFUND' ? 'Wnioskowany zwrot' : 'Do przeniesienia') + '</span><strong>' + money((vatSettings.excessMode === 'REFUND' ? calc.vatResult.refundRequestedGrosz : calc.vatResult.carryForwardGrosz) / 100) + '</strong></div>'
         : '<div class="detail-row"><span>VAT do zapłaty</span><strong>' + money(calc.vat) + '</strong></div>') +
-      calc.vatResult.findings.map(item => '<div class="calculation-finding ' + item.severity + '"><strong>' + escapeHtml(item.code) + '</strong><span>' + escapeHtml(item.message) + '</span></div>').join('');
+      findingSummary(calc.vatResult.findings, 'vat');
 
     document.getElementById('zusDetails').innerHTML =
       '<div class="detail-row"><span>Składki społeczne</span><strong>' + money(state.rules.socialZus) + '</strong></div>' +
@@ -308,6 +365,96 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
       '<div class="detail-row"><span>Składki do zapłaty</span><strong>' + money(calc.zus) + '</strong></div>';
 
     renderInvoices();
+    renderVerification(calc);
+  }
+
+  function findingSummary(findings, area) {
+    if (!findings.length) return '';
+    const grouped = new Map();
+    findings.forEach(item => {
+      const key = item.code + '|' + item.severity;
+      const current = grouped.get(key) || { item, count: 0 };
+      current.count += 1;
+      grouped.set(key, current);
+    });
+    const actionText = area === 'pit'
+      ? 'Otwórz Centrum weryfikacji, aby uzupełnić stały profil kategorii lub dane tego miesiąca.'
+      : 'Otwórz Centrum weryfikacji, aby sprawdzić dokumenty i decyzje dotyczące VAT.';
+    const rows = [...grouped.values()].map(({ item, count }) =>
+      '<div class="technical-finding"><strong>' + escapeHtml(item.code) + (count > 1 ? ' × ' + count : '') + '</strong><span>' + escapeHtml(item.message) + '</span></div>'
+    ).join('');
+    return '<div class="verification-prompt"><strong>Wymaga Twojej uwagi</strong><span>' + actionText + '</span><button type="button" class="text-button" data-view-target="verification">Przejdź do weryfikacji →</button></div>' +
+      '<details class="technical-findings"><summary>Szczegóły techniczne (' + findings.length + ')</summary>' + rows + '</details>';
+  }
+
+  function isCategoryProfileComplete(id) {
+    const profile = state.categoryProfiles[id] || {};
+    const decision = profile.decision || {};
+    const period = state.period.slice(0, 7);
+    return Boolean(
+      profile.pkwiu && profile.legalBasis && profile.validFrom && profile.validTo &&
+      profile.validFrom <= period && profile.validTo >= period &&
+      decision.approvedBy && decision.approvedAt && decision.reason && decision.reference
+    );
+  }
+
+  function invoicePeriod(invoice) {
+    const value = invoice.revenuePeriod || invoice.date;
+    return typeof value === 'string' ? value.slice(0, 7) : '';
+  }
+
+  function renderVerification(calc = calculations()) {
+    const period = state.period.slice(0, 7);
+    const currentSales = state.invoices.filter(invoice => invoice.type === 'sale' && invoicePeriod(invoice) === period);
+    const noSalesConfirmed = Boolean(ryczaltSettingsForPeriod().noSalesConfirmed);
+    const salesReady = currentSales.length > 0 || noSalesConfirmed;
+    const incompleteProfiles = Object.keys(defaultCategoryProfiles).filter(id => !isCategoryProfileComplete(id));
+    const deductionGrosz = ryczaltSettingsForPeriod().deductionGrosz;
+    const deductionBlocked = calc.pitResult.findings.some(item =>
+      item.code === 'DEDUCTION_EXCEEDS_CATEGORY_REVENUE' || item.code === 'DEDUCTION_WITHOUT_REVENUE'
+    );
+    const vatNeedsReview = calc.vatResult.status !== 'VERIFIED';
+    const taskCount = incompleteProfiles.length + (salesReady ? 0 : 1) + (deductionBlocked ? 1 : 0) + (vatNeedsReview ? 1 : 0);
+
+    setText('verificationCountBadge', taskCount);
+    setText('verificationOpenCount', taskCount);
+    setText('verificationPeriodName', periodName());
+    setText('verificationSalesCount', currentSales.length + ' ' + plural(currentSales.length, 'faktura sprzedażowa', 'faktury sprzedażowe', 'faktur sprzedażowych'));
+    setText('verificationDeductionValue', money(deductionGrosz / 100));
+    setText('verificationVatStatus', vatNeedsReview ? 'Wymaga sprawdzenia' : 'Gotowe');
+
+    const overall = document.getElementById('verificationOverallStatus');
+    overall.textContent = taskCount ? 'Do weryfikacji' : 'Gotowe';
+    overall.className = 'status-pill ' + (taskCount ? 'warning' : 'success');
+
+    const salesTask = document.getElementById('verificationSalesTask');
+    salesTask.classList.toggle('complete', salesReady);
+    salesTask.classList.toggle('attention', !salesReady);
+    setText('verificationSalesHelp', currentSales.length
+      ? 'Dokumenty sprzedaży z wybranego miesiąca są gotowe do obliczeń.'
+      : (noSalesConfirmed
+        ? 'Potwierdzono brak sprzedaży w tym miesiącu.'
+        : 'Nie znaleźliśmy sprzedaży. Dodaj dokument, zsynchronizuj KSeF albo potwierdź miesiąc bez sprzedaży.'));
+    document.getElementById('confirmNoSales').hidden = currentSales.length > 0 || noSalesConfirmed;
+
+    const deductionTask = document.getElementById('verificationDeductionTask');
+    deductionTask.classList.toggle('complete', !deductionBlocked);
+    deductionTask.classList.toggle('attention', deductionBlocked);
+    setText('verificationDeductionHelp', deductionBlocked
+      ? 'Odliczenie przekracza przychód możliwy do rozliczenia w tym miesiącu. Zmień kwotę i przelicz.'
+      : 'Kwota jest przypisana wyłącznie do tego okresu i nie przejdzie automatycznie na kolejny miesiąc.');
+
+    const vatTask = document.getElementById('verificationVatTask');
+    vatTask.classList.toggle('complete', !vatNeedsReview);
+    vatTask.classList.toggle('attention', vatNeedsReview);
+
+    Object.keys(defaultCategoryProfiles).forEach(id => {
+      const complete = isCategoryProfileComplete(id);
+      const status = document.getElementById(id + 'ProfileStatus');
+      status.textContent = complete ? 'Potwierdzone' : 'Uzupełnij raz';
+      status.className = 'status-pill ' + (complete ? 'success' : 'warning');
+      document.getElementById(id + 'ProfileCard').classList.toggle('complete', complete);
+    });
   }
 
   function plural(count, one, few, many) {
@@ -403,7 +550,6 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
     setTextInput('rateSoftware', state.rules.software);
     setTextInput('rateConsulting', state.rules.consulting);
     setTextInput('vatRate', state.rules.vatRate);
-    setTextInput('revenueDeduction', state.rules.revenueDeduction);
     setTextInput('socialZus', state.rules.socialZus);
     setTextInput('healthZus', state.rules.healthZus);
     setTextInput('openingVatCarry', vatSettings.openingCarryForwardGrosz / 100);
@@ -421,7 +567,6 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
       software: value('rateSoftware'),
       consulting: value('rateConsulting'),
       vatRate: state.rules.vatRate,
-      revenueDeduction: value('revenueDeduction'),
       socialZus: value('socialZus'),
       healthZus: value('healthZus')
     };
@@ -431,6 +576,67 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
       excessMode: document.getElementById('vatExcessMode').value
     };
     state.vatSettings = { byPeriod };
+  }
+
+  function fillVerificationForm() {
+    Object.keys(defaultCategoryProfiles).forEach(id => {
+      const profile = state.categoryProfiles[id];
+      setTextInput(id + 'ProfilePkwiu', profile.pkwiu);
+      setTextInput(id + 'ProfileLegalBasis', profile.legalBasis);
+      setTextInput(id + 'ProfileValidFrom', profile.validFrom);
+      setTextInput(id + 'ProfileValidTo', profile.validTo);
+      setTextInput(id + 'ProfileRate', state.rules[id]);
+      const checkbox = document.getElementById(id + 'ProfileConfirmed');
+      if (checkbox) checkbox.checked = Boolean(profile.decision);
+    });
+    setTextInput('verificationDeduction', ryczaltSettingsForPeriod().deductionGrosz / 100);
+  }
+
+  function localIsoDate() {
+    const date = new Date();
+    return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+  }
+
+  function saveCategoryProfiles() {
+    const nextProfiles = {};
+    for (const id of Object.keys(defaultCategoryProfiles)) {
+      const pkwiu = document.getElementById(id + 'ProfilePkwiu').value.trim();
+      const legalBasis = document.getElementById(id + 'ProfileLegalBasis').value.trim();
+      const validFrom = document.getElementById(id + 'ProfileValidFrom').value;
+      const validTo = document.getElementById(id + 'ProfileValidTo').value;
+      const confirmed = document.getElementById(id + 'ProfileConfirmed').checked;
+      const rate = Math.max(0, Number(document.getElementById(id + 'ProfileRate').value) || 0);
+      if (confirmed && (!pkwiu || !legalBasis || !validFrom || !validTo || !rate)) {
+        showToast('Uzupełnij PKWiU, stawkę, źródło i okres obowiązywania przed potwierdzeniem profilu.', 'error');
+        return false;
+      }
+      if (validFrom && validTo && validFrom > validTo) {
+        showToast('Data końcowa obowiązywania kategorii nie może być wcześniejsza niż początkowa.', 'error');
+        return false;
+      }
+      state.rules[id] = rate;
+      nextProfiles[id] = Object.assign({}, state.categoryProfiles[id], {
+        pkwiu,
+        legalBasis,
+        validFrom,
+        validTo,
+        decision: confirmed ? {
+          approvedBy: state.company.name || 'Użytkownik aplikacji',
+          approvedAt: localIsoDate(),
+          reason: 'Potwierdzenie stałej konfiguracji działalności',
+          reference: legalBasis
+        } : null
+      });
+    }
+    state.categoryProfiles = nextProfiles;
+    return true;
+  }
+
+  function savePeriodDeduction() {
+    const amount = Math.max(0, Number(document.getElementById('verificationDeduction').value) || 0);
+    const byPeriod = Object.assign({}, state.ryczaltSettings.byPeriod || {});
+    byPeriod[state.period.slice(0, 7)] = Object.assign({}, byPeriod[state.period.slice(0, 7)] || {}, { deductionGrosz: toGrosz(amount) });
+    state.ryczaltSettings = { byPeriod };
   }
 
   function renderTasks() {
@@ -517,8 +723,11 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
   document.querySelectorAll('.nav-item[data-view]').forEach(button => {
     button.addEventListener('click', () => showView(button.dataset.view));
   });
-  document.querySelectorAll('[data-view-target]').forEach(button => {
-    button.addEventListener('click', () => showView(button.dataset.viewTarget));
+  document.addEventListener('click', event => {
+    const button = event.target.closest('[data-view-target]');
+    if (!button) return;
+    event.preventDefault();
+    showView(button.dataset.viewTarget);
   });
   document.querySelectorAll('[data-toast]').forEach(button => {
     button.addEventListener('click', event => {
@@ -551,6 +760,7 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
     state.period = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-01';
     updatePeriod();
     fillRuleForm();
+    fillVerificationForm();
     renderCalculations();
     persist();
     showToast('Wybrano okres: ' + periodName(), 'info');
@@ -714,15 +924,42 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
 
   document.getElementById('saveRules').addEventListener('click', () => {
     readRuleForm();
+    fillVerificationForm();
     persist();
     renderCalculations();
     showToast('Reguły zapisano. Wszystkie kwoty zostały przeliczone.');
+  });
+
+  document.getElementById('saveCategoryProfiles').addEventListener('click', () => {
+    if (!saveCategoryProfiles()) return;
+    fillRuleForm();
+    persist();
+    renderCalculations();
+    showToast('Profil działalności zapisano. Będzie używany także w kolejnych miesiącach.');
+  });
+
+  document.getElementById('savePeriodDeduction').addEventListener('click', () => {
+    savePeriodDeduction();
+    persist();
+    renderCalculations();
+    showToast('Odliczenie zapisano tylko dla wybranego miesiąca.');
+  });
+
+  document.getElementById('confirmNoSales').addEventListener('click', () => {
+    const period = state.period.slice(0, 7);
+    const byPeriod = Object.assign({}, state.ryczaltSettings.byPeriod || {});
+    byPeriod[period] = Object.assign({}, byPeriod[period] || {}, { noSalesConfirmed: true });
+    state.ryczaltSettings = { byPeriod };
+    persist();
+    renderCalculations();
+    showToast('Potwierdzono miesiąc bez sprzedaży.');
   });
 
   document.getElementById('restoreRules').addEventListener('click', () => {
     state.rules = Object.assign({}, defaultRules);
     state.vatSettings = Object.assign({}, initialState.vatSettings);
     fillRuleForm();
+    fillVerificationForm();
     persist();
     renderCalculations();
     showToast('Przywrócono wartości demonstracyjne.');
@@ -797,6 +1034,7 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
 
   updatePeriod();
   fillRuleForm();
+  fillVerificationForm();
   renderCompany();
   renderTasks();
   renderCalculations();

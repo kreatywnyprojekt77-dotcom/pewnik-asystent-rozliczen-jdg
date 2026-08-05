@@ -113,8 +113,16 @@ test("app używa obu kalkulatorów, a build publikuje oba adaptery", async () =>
   assert.match(build, /['"]ryczalt-adapter\.mjs['"]/);
   assert.match(html, /id="pitStatus"/);
   assert.match(html, /id="vatStatus"/);
+  assert.match(html, /id="verificationView"/);
+  assert.match(html, /id="saveCategoryProfiles"/);
+  assert.match(html, /PKWiU jest częścią profilu działalności/);
+  assert.match(app, /categoryMetadata: state\.categoryProfiles/);
+  assert.match(app, /ryczaltSettingsForPeriod\(\)\.deductionGrosz/);
+  assert.match(app, /noSalesConfirmed/);
+  assert.doesNotMatch(app, /state\.rules\.revenueDeduction/);
   assert.match(app, /reviewPit \? 'Do weryfikacji'/);
   assert.match(app, /status === 'INVALID' \? 'Błąd danych' : 'Do weryfikacji'/);
   assert.match(app, /reviewOverall \? 'Do weryfikacji'/);
   assert.doesNotMatch(app, /reviewPit \? 'Wynik roboczy'/);
+  assert.doesNotMatch(app, /Ryczałt — wynik roboczy/);
 });
