@@ -113,4 +113,8 @@ test("app używa obu kalkulatorów, a build publikuje oba adaptery", async () =>
   assert.match(build, /['"]ryczalt-adapter\.mjs['"]/);
   assert.match(html, /id="pitStatus"/);
   assert.match(html, /id="vatStatus"/);
+  assert.match(app, /reviewPit \? 'Do weryfikacji'/);
+  assert.match(app, /status === 'INVALID' \? 'Błąd danych' : 'Do weryfikacji'/);
+  assert.match(app, /reviewOverall \? 'Do weryfikacji'/);
+  assert.doesNotMatch(app, /reviewPit \? 'Wynik roboczy'/);
 });

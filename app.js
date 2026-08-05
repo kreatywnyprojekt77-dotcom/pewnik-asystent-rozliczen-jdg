@@ -261,15 +261,15 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
     setText('documentInvoiceCount', vatDocumentCount + ' ' + plural(vatDocumentCount, 'pozycja ewidencji', 'pozycje ewidencji', 'pozycji ewidencji'));
 
     const pitStatus = document.getElementById('pitStatus');
-    pitStatus.textContent = invalidPit ? 'Błąd danych' : (reviewPit ? 'Wynik roboczy' : 'Do zapłaty');
+    pitStatus.textContent = invalidPit ? 'Błąd danych' : (reviewPit ? 'Do weryfikacji' : 'Do zapłaty');
     pitStatus.className = 'status-pill ' + (invalidPit ? 'error' : (reviewPit ? 'warning' : 'neutral'));
     const vatStatus = document.getElementById('vatStatus');
-    vatStatus.textContent = calc.vatResult.status === 'VERIFIED' ? (calc.vatResult.excessGrosz > 0 ? 'Nadwyżka' : 'Do zapłaty') : (calc.vatResult.status === 'INVALID' ? 'Błąd danych' : 'Sprawdź');
+    vatStatus.textContent = calc.vatResult.status === 'VERIFIED' ? (calc.vatResult.excessGrosz > 0 ? 'Nadwyżka' : 'Do zapłaty') : (calc.vatResult.status === 'INVALID' ? 'Błąd danych' : 'Do weryfikacji');
     vatStatus.className = 'status-pill ' + (calc.vatResult.status === 'VERIFIED' ? 'neutral' : (calc.vatResult.status === 'INVALID' ? 'error' : 'warning'));
     setText('calculationReadinessTitle', invalidOverall ? 'Rozliczenie wymaga poprawy danych' : (reviewOverall ? 'Rozliczenie wymaga sprawdzenia' : 'Rozliczenie jest gotowe'));
     setText('calculationReadinessDescription', invalidOverall ? 'Popraw błędy wskazane w szczegółach ryczałtu lub VAT przed przygotowaniem płatności.' : (reviewOverall ? 'Sprawdź ostrzeżenia kalkulatorów przed zatwierdzeniem rozliczenia.' : 'Nie znaleźliśmy braków ani sytuacji wymagających uwagi.'));
     const overallStatus = document.getElementById('overallCalculationStatus');
-    overallStatus.textContent = invalidOverall ? 'Błąd' : (reviewOverall ? 'Sprawdź' : 'Gotowe');
+    overallStatus.textContent = invalidOverall ? 'Błąd' : (reviewOverall ? 'Do weryfikacji' : 'Gotowe');
     overallStatus.className = 'status-pill ' + (invalidOverall ? 'error' : (reviewOverall ? 'warning' : 'success'));
     document.getElementById('downloadDraft').disabled = invalidVat;
     document.querySelector('[data-task="transfers"]').disabled = invalidOverall;
