@@ -1,5 +1,7 @@
 import { calculateVat } from './vat-calculator.mjs';
 import { createVatInputFromInvoices } from './vat-adapter.mjs';
+import { calculateRyczalt } from './ryczalt-calculator.mjs';
+import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
 
 (function () {
   'use strict';
@@ -101,6 +103,22 @@ import { createVatInputFromInvoices } from './vat-adapter.mjs';
     }).format(Number(value) || 0);
   }
 
+  function exactTax(units) {
+    return new Intl.NumberFormat('pl-PL', {
+      style: 'currency',
+      currency: 'PLN',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 4
+    }).format(Number(units) / 10000);
+  }
+
+  function toGrosz(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric)
+      ? Math.sign(numeric) * Math.round(Math.abs(numeric) * 100 + Number.EPSILON)
+      : null;
+  }
+
   function capitalize(text) {
     return text.charAt(0).toUpperCase() + text.slice(1);
   }
@@ -145,14 +163,11 @@ import { createVatInputFromInvoices } from './vat-adapter.mjs';
   }
 
   function calculations() {
-    const sales = state.invoices.filter(invoice => invoice.type === 'sale');
-    const costs = state.invoices.filter(invoice => invoice.type === 'cost');
-    const revenue = sales.reduce((sum, invoice) => sum + Number(invoice.net), 0);
-    const costsNet = costs.reduce((sum, invoice) => sum + Number(invoice.net), 0);
+    const settlementPeriod = state.period.slice(0, 7);
     const vatSettings = vatSettingsForPeriod();
     const vatInput = createVatInputFromInvoices({
       invoices: state.invoices,
-      settlementPeriod: state.period.slice(0, 7),
+      settlementPeriod,
       openingCarryForwardGrosz: vatSettings.openingCarryForwardGrosz,
       excessDecision: { mode: vatSettings.excessMode }
     });
@@ -162,23 +177,32 @@ import { createVatInputFromInvoices } from './vat-adapter.mjs';
     const deductibleVat = vatResult.deductibleInputVatGrosz == null ? 0 : vatResult.deductibleInputVatGrosz / 100;
     const vat = vatResult.taxDueGrosz == null ? 0 : vatResult.taxDueGrosz / 100;
 
-    const deduction = Math.min(revenue, Math.max(0, Number(state.rules.revenueDeduction)));
-    const taxableRevenue = Math.max(0, revenue - deduction);
-    const categories = ['software', 'consulting'];
-    const categoryRows = categories.map(category => {
-      const categoryRevenue = sales.filter(invoice => invoice.category === category).reduce((sum, invoice) => sum + Number(invoice.net), 0);
-      const categoryDeduction = revenue ? deduction * (categoryRevenue / revenue) : 0;
-      const base = Math.max(0, categoryRevenue - categoryDeduction);
-      const rate = Number(state.rules[category]) || 0;
-      return { category, revenue: categoryRevenue, base, rate, tax: base * rate / 100 };
+    const ryczaltInput = createRyczaltInputFromInvoices({
+      invoices: state.invoices,
+      settlementPeriod,
+      deductionGrosz: toGrosz(state.rules.revenueDeduction),
+      ratesPercent: {
+        software: state.rules.software,
+        consulting: state.rules.consulting
+      }
     });
-    const pit = categoryRows.reduce((sum, row) => sum + row.tax, 0);
+    const pitResult = calculateRyczalt(ryczaltInput);
+    const includedPitIds = new Set(pitResult.audit.inputRevenueIds.map(String));
+    const includedVatIds = new Set(vatResult.audit.includedEntryIds.map(String));
+    const sales = state.invoices.filter(invoice => invoice.type === 'sale' && includedPitIds.has(String(invoice.id)));
+    const costs = state.invoices.filter(invoice => invoice.type === 'cost' && includedVatIds.has(String(invoice.id)));
+    const revenue = pitResult.revenueTotalGrosz == null ? null : pitResult.revenueTotalGrosz / 100;
+    const costsNet = costs.reduce((sum, invoice) => sum + Number(invoice.net), 0);
+    const deduction = pitResult.deductionTotalGrosz == null ? null : pitResult.deductionTotalGrosz / 100;
+    const taxableRevenue = pitResult.taxableBaseBeforeRoundingGrosz == null ? null : pitResult.taxableBaseBeforeRoundingGrosz / 100;
+    const pit = pitResult.taxDuePln;
     const zus = Number(state.rules.socialZus) + Number(state.rules.healthZus);
+    const calculationInvalid = vatResult.status === 'INVALID' || pitResult.status === 'INVALID' || pit == null;
 
     return {
       sales, costs, revenue, costsNet, salesVat, costVat, deductibleVat, vat, vatResult,
-      deduction, taxableRevenue, categoryRows, pit, zus,
-      total: vatResult.status === 'INVALID' ? null : pit + vat + zus
+      deduction, taxableRevenue, pitResult, pit, zus,
+      total: calculationInvalid ? null : pit + vat + zus
     };
   }
 
@@ -216,41 +240,57 @@ import { createVatInputFromInvoices } from './vat-adapter.mjs';
   function renderCalculations() {
     const calc = calculations();
     const vatSettings = vatSettingsForPeriod();
+    const invalidPit = calc.pitResult.status === 'INVALID';
+    const reviewPit = calc.pitResult.status === 'REVIEW_REQUIRED';
+    const invalidVat = calc.vatResult.status === 'INVALID';
+    const reviewVat = calc.vatResult.status === 'REVIEW_REQUIRED';
+    const invalidOverall = invalidPit || invalidVat;
+    const reviewOverall = !invalidOverall && (reviewPit || reviewVat);
     setText('grandTotal', calc.total == null ? '—' : money(calc.total));
     setText('settlementTotal', calc.total == null ? '—' : money(calc.total));
-    setText('pitAmount', money(calc.pit));
-    setText('vatAmount', calc.vatResult.status === 'INVALID' ? '—' : money(calc.vat));
+    setText('pitAmount', calc.pit == null ? '—' : money(calc.pit));
+    setText('vatAmount', invalidVat ? '—' : money(calc.vat));
     setText('zusAmount', money(calc.zus));
-    setText('revenueMetric', money(calc.revenue));
+    setText('revenueMetric', calc.revenue == null ? '—' : money(calc.revenue));
     setText('costMetric', money(calc.costsNet));
-    setText('vatMetric', calc.vatResult.status === 'INVALID' ? '—' : money(calc.vat));
+    setText('vatMetric', invalidVat ? '—' : money(calc.vat));
     setText('salesCountMetric', calc.sales.length + ' ' + plural(calc.sales.length, 'faktura sprzedażowa', 'faktury sprzedażowe', 'faktur sprzedażowych'));
     setText('costCountMetric', calc.costs.length + ' ' + plural(calc.costs.length, 'faktura kosztowa', 'faktury kosztowe', 'faktur kosztowych'));
-    setText('documentVat', calc.vatResult.status === 'INVALID' ? '—' : money(calc.vat));
+    setText('documentVat', invalidVat ? '—' : money(calc.vat));
     const vatDocumentCount = calc.vatResult.audit.includedEntryIds.length;
     setText('documentInvoiceCount', vatDocumentCount + ' ' + plural(vatDocumentCount, 'pozycja ewidencji', 'pozycje ewidencji', 'pozycji ewidencji'));
+
+    const pitStatus = document.getElementById('pitStatus');
+    pitStatus.textContent = invalidPit ? 'Błąd danych' : (reviewPit ? 'Wynik roboczy' : 'Do zapłaty');
+    pitStatus.className = 'status-pill ' + (invalidPit ? 'error' : (reviewPit ? 'warning' : 'neutral'));
     const vatStatus = document.getElementById('vatStatus');
     vatStatus.textContent = calc.vatResult.status === 'VERIFIED' ? (calc.vatResult.excessGrosz > 0 ? 'Nadwyżka' : 'Do zapłaty') : (calc.vatResult.status === 'INVALID' ? 'Błąd danych' : 'Sprawdź');
     vatStatus.className = 'status-pill ' + (calc.vatResult.status === 'VERIFIED' ? 'neutral' : (calc.vatResult.status === 'INVALID' ? 'error' : 'warning'));
-    const invalidVat = calc.vatResult.status === 'INVALID';
-    const reviewVat = calc.vatResult.status === 'REVIEW_REQUIRED';
-    setText('calculationReadinessTitle', invalidVat ? 'Rozliczenie VAT wymaga poprawy danych' : (reviewVat ? 'Rozliczenie VAT wymaga sprawdzenia' : 'Rozliczenie jest gotowe'));
-    setText('calculationReadinessDescription', invalidVat ? 'Popraw błędy wskazane w szczegółach VAT przed przygotowaniem płatności lub JPK.' : (reviewVat ? 'Sprawdź ostrzeżenia VAT przed zatwierdzeniem rozliczenia.' : 'Nie znaleźliśmy braków ani sytuacji wymagających uwagi.'));
+    setText('calculationReadinessTitle', invalidOverall ? 'Rozliczenie wymaga poprawy danych' : (reviewOverall ? 'Rozliczenie wymaga sprawdzenia' : 'Rozliczenie jest gotowe'));
+    setText('calculationReadinessDescription', invalidOverall ? 'Popraw błędy wskazane w szczegółach ryczałtu lub VAT przed przygotowaniem płatności.' : (reviewOverall ? 'Sprawdź ostrzeżenia kalkulatorów przed zatwierdzeniem rozliczenia.' : 'Nie znaleźliśmy braków ani sytuacji wymagających uwagi.'));
     const overallStatus = document.getElementById('overallCalculationStatus');
-    overallStatus.textContent = invalidVat ? 'Błąd' : (reviewVat ? 'Sprawdź' : 'Gotowe');
-    overallStatus.className = 'status-pill ' + (invalidVat ? 'error' : (reviewVat ? 'warning' : 'success'));
+    overallStatus.textContent = invalidOverall ? 'Błąd' : (reviewOverall ? 'Sprawdź' : 'Gotowe');
+    overallStatus.className = 'status-pill ' + (invalidOverall ? 'error' : (reviewOverall ? 'warning' : 'success'));
     document.getElementById('downloadDraft').disabled = invalidVat;
-    document.querySelectorAll('[data-task="transfers"], [data-task="jpk"]').forEach(input => { input.disabled = invalidVat; });
+    document.querySelector('[data-task="transfers"]').disabled = invalidOverall;
+    document.querySelector('[data-task="jpk"]').disabled = invalidVat;
 
-    const pitRows = calc.categoryRows.filter(row => row.revenue > 0).map(row => {
-      const name = row.category === 'software' ? 'Usługi programistyczne' : 'Usługi konsultingowe';
-      return '<div class="detail-row"><span>' + name + ' · ' + number(row.base) + ' zł × ' + number(row.rate) + '%</span><strong>' + money(row.tax) + '</strong></div>';
+    const pitCategoryRows = calc.pitResult.categoryRows.filter(row => row.currentRevenueGrosz > 0).map(row => {
+      const base = row.taxableBaseBeforeRoundingGrosz == null ? '—' : money(row.taxableBaseBeforeRoundingGrosz / 100);
+      return '<div class="detail-row"><span>' + escapeHtml(row.name) + ' · przychód ' + money(row.currentRevenueGrosz / 100) + ' · odliczenie ' + money(row.deductionAllocatedGrosz / 100) + '</span><strong>podstawa ' + base + '</strong></div>';
     }).join('');
+    const pitRateRows = calc.pitResult.rateRows.map(row =>
+      '<div class="detail-row"><span>Podstawa ' + money(row.baseBeforeRoundingGrosz / 100) + ' → ' + money(row.roundedBasePln) + ' × ' + number(row.rateBasisPoints / 100) + '%</span><strong>' + exactTax(row.taxExact.units) + '</strong></div>'
+    ).join('');
+    const pitFindings = calc.pitResult.findings.map(item =>
+      '<div class="calculation-finding ' + item.severity + '"><strong>' + escapeHtml(item.code) + '</strong><span>' + escapeHtml(item.message) + '</span></div>'
+    ).join('');
     document.getElementById('pitDetails').innerHTML =
-      '<div class="detail-row"><span>Przychód netto</span><strong>' + money(calc.revenue) + '</strong></div>' +
-      '<div class="detail-row"><span>Odliczenie od przychodu</span><strong>− ' + money(calc.deduction) + '</strong></div>' +
-      pitRows +
-      '<div class="detail-row"><span>Ryczałt do zapłaty</span><strong>' + money(calc.pit) + '</strong></div>';
+      '<div class="detail-row"><span>Przychód netto</span><strong>' + (calc.revenue == null ? '—' : money(calc.revenue)) + '</strong></div>' +
+      '<div class="detail-row"><span>Odliczenie od przychodu</span><strong>' + (calc.deduction == null ? '—' : '− ' + money(calc.deduction)) + '</strong></div>' +
+      pitCategoryRows + pitRateRows +
+      '<div class="detail-row"><span>' + (reviewPit ? 'Ryczałt — wynik roboczy' : 'Ryczałt do zapłaty') + '</span><strong>' + (calc.pit == null ? '—' : money(calc.pit)) + '</strong></div>' +
+      pitFindings;
 
     document.getElementById('vatDetails').innerHTML =
       '<div class="detail-row"><span>VAT należny ze sprzedaży</span><strong>' + money(calc.salesVat) + '</strong></div>' +
@@ -531,7 +571,7 @@ import { createVatInputFromInvoices } from './vat-adapter.mjs';
   document.getElementById('copyTotal').addEventListener('click', async () => {
     const total = calculations().total;
     if (total == null) {
-      showToast('Najpierw popraw błędy kalkulatora VAT.', 'error');
+      showToast('Najpierw popraw błędy kalkulatora ryczałtu lub VAT.', 'error');
       return;
     }
     const amount = total.toFixed(2).replace('.', ',');

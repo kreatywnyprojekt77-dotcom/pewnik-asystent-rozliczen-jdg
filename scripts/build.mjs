@@ -66,6 +66,7 @@ const runtimeFiles = [
   'app.js',
   'supabase-sync.js',
   'ryczalt-calculator.mjs',
+  'ryczalt-adapter.mjs',
   'vat-calculator.mjs',
   'vat-adapter.mjs'
 ];

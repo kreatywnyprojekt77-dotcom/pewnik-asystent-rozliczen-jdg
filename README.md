@@ -349,3 +349,14 @@ Na osobne zlecenie użytkownika projekt zawiera roboczą integrację z KSeF API 
 Ograniczenia plików opisane wcześniej dotyczą zakończonej, izolowanej iteracji kalkulatora ryczałtu. Bieżąca iteracja rozszerza aplikację o niezależny kalkulator VAT oraz zezwala na zmianę integracji, UI, testów, schematu Supabase i procesu budowania w zakresie niezbędnym do jego uruchomienia.
 
 Normatywna specyfikacja zakresu, kontraktu, algorytmu, statusów i kryteriów ukończenia tej iteracji znajduje się w `VAT-CALCULATOR.md`. Implementację stanowią `vat-calculator.mjs` i `vat-adapter.mjs`; aplikacja musi korzystać z tych modułów zamiast utrzymywać drugi wzór VAT w `app.js`.
+
+## Integracja kalkulatorów z aplikacją
+
+`app.js` orkiestruje oba niezależne kalkulatory i nie może utrzymywać równoległego wzoru ryczałtu ani VAT. Dane faktur są mapowane przez:
+
+- `ryczalt-adapter.mjs` do kontraktu `calculateRyczalt()`;
+- `vat-adapter.mjs` do kontraktu `calculateVat()`.
+
+Adapter ryczałtu uwzględnia wyłącznie sprzedaż z wybranego miesiąca, a przychód narastający buduje ze sprzedaży od początku tego samego roku do końca wybranego miesiąca. Jawne `revenuePeriod` ma pierwszeństwo; w obecnym prototypie jego braku używana jest data dokumentu. Koszty nie wchodzą do przychodu ryczałtowego. Stawki z UI są przeliczane na całkowite punkty bazowe, a odliczenie na całkowite grosze przed przekazaniem do kalkulatora.
+
+Obecny interfejs nie zapisuje kompletnej klasyfikacji PKWiU, podstawy prawnej ani decyzji podatkowej. Adapter nie uzupełnia ich fikcyjnymi danymi, dlatego wynik ryczałtu pozostaje `REVIEW_REQUIRED`, dopóki te informacje nie zostaną jawnie dostarczone. Status całego rozliczenia uwzględnia niezależnie status ryczałtu i VAT; błąd któregokolwiek kalkulatora blokuje łączną kwotę przelewów.
