@@ -352,11 +352,20 @@ Normatywna specyfikacja zakresu, kontraktu, algorytmu, statusów i kryteriów uk
 
 ## Integracja kalkulatorów z aplikacją
 
-`app.js` orkiestruje oba niezależne kalkulatory i nie może utrzymywać równoległego wzoru ryczałtu ani VAT. Dane faktur są mapowane przez:
+`app.js` orkiestruje niezależne kalkulatory i nie może utrzymywać równoległego wzoru ryczałtu, VAT ani ZUS. Dane faktur są mapowane przez:
 
 - `ryczalt-adapter.mjs` do kontraktu `calculateRyczalt()`;
-- `vat-adapter.mjs` do kontraktu `calculateVat()`.
+- `vat-adapter.mjs` do kontraktu `calculateVat()`;
+- `zus-adapter.mjs` do kontraktu `calculateZus()`.
 
 Adapter ryczałtu uwzględnia wyłącznie sprzedaż z wybranego miesiąca, a przychód narastający buduje ze sprzedaży od początku tego samego roku do końca wybranego miesiąca. Jawne `revenuePeriod` ma pierwszeństwo; w obecnym prototypie jego braku używana jest data dokumentu. Koszty nie wchodzą do przychodu ryczałtowego. Stawki z UI są przeliczane na całkowite punkty bazowe, a odliczenie na całkowite grosze przed przekazaniem do kalkulatora.
 
 Obecny interfejs nie zapisuje kompletnej klasyfikacji PKWiU, podstawy prawnej ani decyzji podatkowej. Adapter nie uzupełnia ich fikcyjnymi danymi, dlatego wynik ryczałtu pozostaje `REVIEW_REQUIRED`, dopóki te informacje nie zostaną jawnie dostarczone. Status całego rozliczenia uwzględnia niezależnie status ryczałtu i VAT; błąd któregokolwiek kalkulatora blokuje łączną kwotę przelewów.
+
+## Iteracja kalkulatora ZUS
+
+Normatywna specyfikacja uproszczonego standardowego ZUS znajduje się w `ZUS-CALCULATOR.md`. Implementację stanowią `zus-rules.mjs`, `zus-calculator.mjs` i `zus-adapter.mjs`. `app.js` prezentuje wynik modułu i nie przechowuje równoległych ręcznych kwot składek.
+
+Kalkulator obejmuje standardowy ZUS 2026 od minimalnej podstawy, pełny miesiąc działalności, ryczałt, FP/FS, stopę wypadkową 1,67%, dobrowolne chorobowe oraz trzy progi zdrowotne ustalane z przychodu narastającego. Ulgi, części miesiąca, zbiegi tytułów, indywidualne stopy i roczne rozliczenie zdrowotnej pozostają poza zakresem.
+
+Wynik ZUS jest należnością za wskazany miesiąc, a nie potwierdzeniem zapłaty. Nie jest automatycznie przekazywany jako odliczenie do kalkulatora ryczałtu. `deductionGrosz` pozostaje zatwierdzoną kwotą opartą na faktycznie poniesionych wydatkach.
