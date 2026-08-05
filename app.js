@@ -1,9 +1,4 @@
-import { calculateVat } from './vat-calculator.mjs';
-import { createVatInputFromInvoices } from './vat-adapter.mjs';
-import { calculateRyczalt } from './ryczalt-calculator.mjs';
-import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
-import { calculateZus } from './zus-calculator.mjs';
-import { createZusInputFromInvoices } from './zus-adapter.mjs';
+import { generateMonthlySummary } from './monthly-summary.mjs';
 import { prepareInvoice } from './invoice-input.mjs';
 
 (function () {
@@ -235,53 +230,28 @@ import { prepareInvoice } from './invoice-input.mjs';
   function calculations() {
     const settlementPeriod = state.period.slice(0, 7);
     const vatSettings = vatSettingsForPeriod();
-    const vatInput = createVatInputFromInvoices({
+    const ryczaltSettings = ryczaltSettingsForPeriod();
+    const zusSettings = zusSettingsForPeriod();
+    return generateMonthlySummary({
       invoices: state.invoices,
       settlementPeriod,
-      openingCarryForwardGrosz: vatSettings.openingCarryForwardGrosz,
-      excessDecision: { mode: vatSettings.excessMode }
-    });
-    const vatResult = calculateVat(vatInput);
-    const salesVat = vatResult.outputVatGrosz == null ? 0 : vatResult.outputVatGrosz / 100;
-    const costVat = vatResult.inputVatGrosz == null ? 0 : vatResult.inputVatGrosz / 100;
-    const deductibleVat = vatResult.deductibleInputVatGrosz == null ? 0 : vatResult.deductibleInputVatGrosz / 100;
-    const vat = vatResult.taxDueGrosz == null ? 0 : vatResult.taxDueGrosz / 100;
-
-    const ryczaltInput = createRyczaltInputFromInvoices({
-      invoices: state.invoices,
-      settlementPeriod,
-      deductionGrosz: ryczaltSettingsForPeriod().deductionGrosz,
-      ratesPercent: {
-        software: state.rules.software,
-        consulting: state.rules.consulting
+      vatSettings: {
+        openingCarryForwardGrosz: vatSettings.openingCarryForwardGrosz,
+        excessMode: vatSettings.excessMode
       },
-      categoryMetadata: state.categoryProfiles
+      ryczaltSettings: {
+        deductionGrosz: ryczaltSettings.deductionGrosz,
+        ratesPercent: {
+          software: state.rules.software,
+          consulting: state.rules.consulting
+        },
+        categoryMetadata: state.categoryProfiles
+      },
+      zusSettings: {
+        healthRevenueDeductionYtdGrosz: zusSettings.healthRevenueDeductionYtdGrosz,
+        sicknessInsurance: state.zusSettings.sicknessInsurance !== false
+      }
     });
-    const pitResult = calculateRyczalt(ryczaltInput);
-    const zusInput = createZusInputFromInvoices({
-      invoices: state.invoices,
-      settlementPeriod,
-      healthRevenueDeductionYtdGrosz: zusSettingsForPeriod().healthRevenueDeductionYtdGrosz,
-      sicknessInsurance: state.zusSettings.sicknessInsurance !== false
-    });
-    const zusResult = calculateZus(zusInput);
-    const includedPitIds = new Set(pitResult.audit.inputRevenueIds.map(String));
-    const includedVatIds = new Set(vatResult.audit.includedEntryIds.map(String));
-    const sales = state.invoices.filter(invoice => invoice.type === 'sale' && includedPitIds.has(String(invoice.id)));
-    const costs = state.invoices.filter(invoice => invoice.type === 'cost' && includedVatIds.has(String(invoice.id)));
-    const revenue = pitResult.revenueTotalGrosz == null ? null : pitResult.revenueTotalGrosz / 100;
-    const costsNet = costs.reduce((sum, invoice) => sum + Number(invoice.net), 0);
-    const deduction = pitResult.deductionTotalGrosz == null ? null : pitResult.deductionTotalGrosz / 100;
-    const taxableRevenue = pitResult.taxableBaseBeforeRoundingGrosz == null ? null : pitResult.taxableBaseBeforeRoundingGrosz / 100;
-    const pit = pitResult.taxDuePln;
-    const zus = zusResult.totalDueGrosz == null ? null : zusResult.totalDueGrosz / 100;
-    const calculationInvalid = vatResult.status === 'INVALID' || pitResult.status === 'INVALID' || zusResult.status === 'INVALID' || pit == null;
-
-    return {
-      sales, costs, revenue, costsNet, salesVat, costVat, deductibleVat, vat, vatResult,
-      deduction, taxableRevenue, pitResult, pit, zus, zusResult,
-      total: calculationInvalid ? null : pit + vat + zus
-    };
   }
 
   function invoiceVat(invoice) {
@@ -318,35 +288,41 @@ import { prepareInvoice } from './invoice-input.mjs';
   function renderCalculations() {
     const calc = calculations();
     const vatSettings = vatSettingsForPeriod();
-    const invalidPit = calc.pitResult.status === 'INVALID';
-    const reviewPit = calc.pitResult.status === 'REVIEW_REQUIRED';
-    const invalidVat = calc.vatResult.status === 'INVALID';
-    const reviewVat = calc.vatResult.status === 'REVIEW_REQUIRED';
-    const invalidZus = calc.zusResult.status === 'INVALID';
-    const reviewZus = calc.zusResult.status === 'REVIEW_REQUIRED';
-    const invalidOverall = invalidPit || invalidVat || invalidZus;
-    const reviewOverall = !invalidOverall && (reviewPit || reviewVat || reviewZus);
-    const blockedOverall = invalidOverall || calc.pit == null;
-    setText('grandTotal', calc.total == null ? '—' : money(calc.total));
-    setText('settlementTotal', calc.total == null ? '—' : money(calc.total));
-    setText('pitAmount', calc.pit == null ? '—' : money(calc.pit));
-    setText('vatAmount', invalidVat ? '—' : money(calc.vat));
-    setText('zusAmount', invalidZus || calc.zus == null ? '—' : money(calc.zus));
-    setText('revenueMetric', calc.revenue == null ? '—' : money(calc.revenue));
-    setText('costMetric', money(calc.costsNet));
-    setText('vatMetric', invalidVat ? '—' : money(calc.vat));
-    setText('salesCountMetric', calc.sales.length + ' ' + plural(calc.sales.length, 'faktura sprzedażowa', 'faktury sprzedażowe', 'faktur sprzedażowych'));
-    setText('costCountMetric', calc.costs.length + ' ' + plural(calc.costs.length, 'faktura kosztowa', 'faktury kosztowe', 'faktur kosztowych'));
-    setText('documentVat', invalidVat ? '—' : money(calc.vat));
-    const vatDocumentCount = calc.vatResult.audit.includedEntryIds.length;
+    const pitResult = calc.components.ryczalt.result;
+    const vatResult = calc.components.vat.result;
+    const zusResult = calc.components.zus.result;
+    const pit = calc.components.ryczalt.dueGrosz == null ? null : calc.components.ryczalt.dueGrosz / 100;
+    const vat = calc.components.vat.dueGrosz == null ? null : calc.components.vat.dueGrosz / 100;
+    const zus = calc.components.zus.dueGrosz == null ? null : calc.components.zus.dueGrosz / 100;
+    const total = calc.payment.totalDueGrosz == null ? null : calc.payment.totalDueGrosz / 100;
+    const invalidPit = pitResult.status === 'INVALID';
+    const reviewPit = pitResult.status === 'REVIEW_REQUIRED';
+    const invalidVat = vatResult.status === 'INVALID';
+    const reviewVat = vatResult.status === 'REVIEW_REQUIRED';
+    const invalidZus = zusResult.status === 'INVALID';
+    const reviewZus = zusResult.status === 'REVIEW_REQUIRED';
+    const invalidOverall = calc.status === 'INVALID';
+    const reviewOverall = calc.status === 'REVIEW_REQUIRED';
+    setText('grandTotal', total == null ? '—' : money(total));
+    setText('settlementTotal', total == null ? '—' : money(total));
+    setText('pitAmount', pit == null ? '—' : money(pit));
+    setText('vatAmount', invalidVat || vat == null ? '—' : money(vat));
+    setText('zusAmount', invalidZus || zus == null ? '—' : money(zus));
+    setText('revenueMetric', calc.metrics.revenueGrosz == null ? '—' : money(calc.metrics.revenueGrosz / 100));
+    setText('costMetric', calc.metrics.costNetGrosz == null ? '—' : money(calc.metrics.costNetGrosz / 100));
+    setText('vatMetric', invalidVat || vat == null ? '—' : money(vat));
+    setText('salesCountMetric', calc.metrics.salesDocumentCount + ' ' + plural(calc.metrics.salesDocumentCount, 'faktura sprzedażowa', 'faktury sprzedażowe', 'faktur sprzedażowych'));
+    setText('costCountMetric', calc.metrics.costDocumentCount + ' ' + plural(calc.metrics.costDocumentCount, 'faktura kosztowa', 'faktury kosztowe', 'faktur kosztowych'));
+    setText('documentVat', invalidVat || vat == null ? '—' : money(vat));
+    const vatDocumentCount = calc.metrics.vatDocumentCount;
     setText('documentInvoiceCount', vatDocumentCount + ' ' + plural(vatDocumentCount, 'pozycja ewidencji', 'pozycje ewidencji', 'pozycji ewidencji'));
 
     const pitStatus = document.getElementById('pitStatus');
     pitStatus.textContent = invalidPit ? 'Błąd danych' : (reviewPit ? 'Do weryfikacji' : 'Do zapłaty');
     pitStatus.className = 'status-pill ' + (invalidPit ? 'error' : (reviewPit ? 'warning' : 'neutral'));
     const vatStatus = document.getElementById('vatStatus');
-    vatStatus.textContent = calc.vatResult.status === 'VERIFIED' ? (calc.vatResult.excessGrosz > 0 ? 'Nadwyżka' : 'Do zapłaty') : (calc.vatResult.status === 'INVALID' ? 'Błąd danych' : 'Do weryfikacji');
-    vatStatus.className = 'status-pill ' + (calc.vatResult.status === 'VERIFIED' ? 'neutral' : (calc.vatResult.status === 'INVALID' ? 'error' : 'warning'));
+    vatStatus.textContent = vatResult.status === 'VERIFIED' ? (vatResult.excessGrosz > 0 ? 'Nadwyżka' : 'Do zapłaty') : (vatResult.status === 'INVALID' ? 'Błąd danych' : 'Do weryfikacji');
+    vatStatus.className = 'status-pill ' + (vatResult.status === 'VERIFIED' ? 'neutral' : (vatResult.status === 'INVALID' ? 'error' : 'warning'));
     const zusStatus = document.getElementById('zusStatus');
     zusStatus.textContent = invalidZus ? 'Błąd danych' : (reviewZus ? 'Do weryfikacji' : 'Do zapłaty');
     zusStatus.className = 'status-pill ' + (invalidZus ? 'error' : (reviewZus ? 'warning' : 'neutral'));
@@ -357,44 +333,44 @@ import { prepareInvoice } from './invoice-input.mjs';
     overallStatus.className = 'status-pill ' + (invalidOverall ? 'error' : (reviewOverall ? 'warning' : 'success'));
     document.querySelector('.ready-banner').classList.toggle('warning', invalidOverall || reviewOverall);
     document.getElementById('downloadDraft').disabled = invalidVat;
-    document.querySelector('[data-task="transfers"]').disabled = blockedOverall;
+    document.querySelector('[data-task="transfers"]').disabled = !calc.payment.canCreateTransfers;
     document.querySelector('[data-task="jpk"]').disabled = invalidVat;
 
-    const pitCategoryRows = calc.pitResult.categoryRows.filter(row => row.currentRevenueGrosz > 0).map(row => {
+    const pitCategoryRows = pitResult.categoryRows.filter(row => row.currentRevenueGrosz > 0).map(row => {
       const base = row.taxableBaseBeforeRoundingGrosz == null ? '—' : money(row.taxableBaseBeforeRoundingGrosz / 100);
       return '<div class="detail-row"><span>' + escapeHtml(row.name) + ' · przychód ' + money(row.currentRevenueGrosz / 100) + ' · odliczenie ' + money(row.deductionAllocatedGrosz / 100) + '</span><strong>podstawa ' + base + '</strong></div>';
     }).join('');
-    const pitRateRows = calc.pitResult.rateRows.map(row =>
+    const pitRateRows = pitResult.rateRows.map(row =>
       '<div class="detail-row"><span>Podstawa ' + money(row.baseBeforeRoundingGrosz / 100) + ' → ' + money(row.roundedBasePln) + ' × ' + number(row.rateBasisPoints / 100) + '%</span><strong>' + exactTax(row.taxExact.units) + '</strong></div>'
     ).join('');
-    const pitFindings = findingSummary(calc.pitResult.findings, 'pit');
+    const pitFindings = findingSummary(pitResult.findings, 'pit');
     document.getElementById('pitDetails').innerHTML =
-      '<div class="detail-row"><span>Przychód netto</span><strong>' + (calc.revenue == null ? '—' : money(calc.revenue)) + '</strong></div>' +
-      '<div class="detail-row"><span>Odliczenie od przychodu</span><strong>' + (calc.deduction == null ? '—' : '− ' + money(calc.deduction)) + '</strong></div>' +
+      '<div class="detail-row"><span>Przychód netto</span><strong>' + (calc.metrics.revenueGrosz == null ? '—' : money(calc.metrics.revenueGrosz / 100)) + '</strong></div>' +
+      '<div class="detail-row"><span>Odliczenie od przychodu</span><strong>' + (calc.metrics.ryczaltDeductionGrosz == null ? '—' : '− ' + money(calc.metrics.ryczaltDeductionGrosz / 100)) + '</strong></div>' +
       pitCategoryRows + pitRateRows +
-      '<div class="detail-row"><span>' + (reviewPit ? 'Ryczałt — do weryfikacji' : 'Ryczałt do zapłaty') + '</span><strong>' + (calc.pit == null ? '—' : money(calc.pit)) + '</strong></div>' +
+      '<div class="detail-row"><span>' + (reviewPit ? 'Ryczałt — do weryfikacji' : 'Ryczałt do zapłaty') + '</span><strong>' + (pit == null ? '—' : money(pit)) + '</strong></div>' +
       pitFindings;
 
     document.getElementById('vatDetails').innerHTML =
-      '<div class="detail-row"><span>VAT należny ze sprzedaży</span><strong>' + money(calc.salesVat) + '</strong></div>' +
-      '<div class="detail-row"><span>VAT naliczony z zakupów</span><strong>' + money(calc.costVat) + '</strong></div>' +
-      '<div class="detail-row"><span>VAT podlegający odliczeniu</span><strong>− ' + money(calc.deductibleVat) + '</strong></div>' +
+      '<div class="detail-row"><span>VAT należny ze sprzedaży</span><strong>' + (calc.metrics.outputVatGrosz == null ? '—' : money(calc.metrics.outputVatGrosz / 100)) + '</strong></div>' +
+      '<div class="detail-row"><span>VAT naliczony z zakupów</span><strong>' + (calc.metrics.inputVatGrosz == null ? '—' : money(calc.metrics.inputVatGrosz / 100)) + '</strong></div>' +
+      '<div class="detail-row"><span>VAT podlegający odliczeniu</span><strong>− ' + (calc.metrics.deductibleInputVatGrosz == null ? '—' : money(calc.metrics.deductibleInputVatGrosz / 100)) + '</strong></div>' +
       '<div class="detail-row"><span>Nadwyżka z poprzedniego okresu</span><strong>− ' + money(vatSettings.openingCarryForwardGrosz / 100) + '</strong></div>' +
-      (calc.vatResult.excessGrosz > 0
-        ? '<div class="detail-row"><span>Nadwyżka VAT</span><strong>' + money(calc.vatResult.excessGrosz / 100) + '</strong></div><div class="detail-row"><span>' + (vatSettings.excessMode === 'REFUND' ? 'Wnioskowany zwrot' : 'Do przeniesienia') + '</span><strong>' + money((vatSettings.excessMode === 'REFUND' ? calc.vatResult.refundRequestedGrosz : calc.vatResult.carryForwardGrosz) / 100) + '</strong></div>'
-        : '<div class="detail-row"><span>VAT do zapłaty</span><strong>' + money(calc.vat) + '</strong></div>') +
-      findingSummary(calc.vatResult.findings, 'vat');
+      (vatResult.excessGrosz > 0
+        ? '<div class="detail-row"><span>Nadwyżka VAT</span><strong>' + money(vatResult.excessGrosz / 100) + '</strong></div><div class="detail-row"><span>' + (vatSettings.excessMode === 'REFUND' ? 'Wnioskowany zwrot' : 'Do przeniesienia') + '</span><strong>' + money((vatSettings.excessMode === 'REFUND' ? vatResult.refundRequestedGrosz : vatResult.carryForwardGrosz) / 100) + '</strong></div>'
+        : '<div class="detail-row"><span>VAT do zapłaty</span><strong>' + (vat == null ? '—' : money(vat)) + '</strong></div>') +
+      findingSummary(vatResult.findings, 'vat');
 
-    const zusSocialRows = calc.zusResult.socialRows.map(row =>
+    const zusSocialRows = zusResult.socialRows.map(row =>
       '<div class="detail-row"><span>' + escapeHtml(row.label) + ' · ' + number(row.rateBasisPoints / 100) + '%</span><strong>' + money(row.amountGrosz / 100) + '</strong></div>'
     ).join('');
     document.getElementById('zusDetails').innerHTML =
-      '<div class="detail-row"><span>Podstawa składek społecznych</span><strong>' + (calc.zusResult.socialBaseGrosz == null ? '—' : money(calc.zusResult.socialBaseGrosz / 100)) + '</strong></div>' +
+      '<div class="detail-row"><span>Podstawa składek społecznych</span><strong>' + (zusResult.socialBaseGrosz == null ? '—' : money(zusResult.socialBaseGrosz / 100)) + '</strong></div>' +
       zusSocialRows +
-      '<div class="detail-row"><span>Przychód dla zdrowotnej narastająco</span><strong>' + (calc.zusResult.healthRevenueYtdGrosz == null ? '—' : money(calc.zusResult.healthRevenueYtdGrosz / 100)) + '</strong></div>' +
-      '<div class="detail-row"><span>Składka zdrowotna</span><strong>' + (calc.zusResult.healthContributionGrosz == null ? '—' : money(calc.zusResult.healthContributionGrosz / 100)) + '</strong></div>' +
-      '<div class="detail-row"><span>Składki do zapłaty</span><strong>' + (calc.zus == null ? '—' : money(calc.zus)) + '</strong></div>' +
-      findingSummary(calc.zusResult.findings.filter(item => item.severity !== 'info'), 'zus');
+      '<div class="detail-row"><span>Przychód dla zdrowotnej narastająco</span><strong>' + (zusResult.healthRevenueYtdGrosz == null ? '—' : money(zusResult.healthRevenueYtdGrosz / 100)) + '</strong></div>' +
+      '<div class="detail-row"><span>Składka zdrowotna</span><strong>' + (zusResult.healthContributionGrosz == null ? '—' : money(zusResult.healthContributionGrosz / 100)) + '</strong></div>' +
+      '<div class="detail-row"><span>Składki do zapłaty</span><strong>' + (zus == null ? '—' : money(zus)) + '</strong></div>' +
+      findingSummary(zusResult.findings.filter(item => item.severity !== 'info'), 'zus');
 
     renderInvoices();
     renderVerification(calc);
@@ -444,10 +420,10 @@ import { prepareInvoice } from './invoice-input.mjs';
     const salesReady = currentSales.length > 0 || noSalesConfirmed;
     const incompleteProfiles = Object.keys(defaultCategoryProfiles).filter(id => !isCategoryProfileComplete(id));
     const deductionGrosz = ryczaltSettingsForPeriod().deductionGrosz;
-    const deductionBlocked = calc.pitResult.findings.some(item =>
+    const deductionBlocked = calc.components.ryczalt.result.findings.some(item =>
       item.code === 'DEDUCTION_EXCEEDS_CATEGORY_REVENUE' || item.code === 'DEDUCTION_WITHOUT_REVENUE'
     );
-    const vatNeedsReview = calc.vatResult.status !== 'VERIFIED';
+    const vatNeedsReview = calc.components.vat.status !== 'VERIFIED';
     const taskCount = incompleteProfiles.length + (salesReady ? 0 : 1) + (deductionBlocked ? 1 : 0) + (vatNeedsReview ? 1 : 0);
 
     setText('verificationCountBadge', taskCount);
@@ -809,11 +785,12 @@ import { prepareInvoice } from './invoice-input.mjs';
   });
 
   document.getElementById('copyTotal').addEventListener('click', async () => {
-    const total = calculations().total;
-    if (total == null) {
-      showToast('Najpierw popraw błędy kalkulatora ryczałtu lub VAT.', 'error');
+    const summary = calculations();
+    if (!summary.payment.canCreateTransfers) {
+      showToast('Najpierw zakończ weryfikację rozliczenia VAT, ryczałtu i ZUS.', 'error');
       return;
     }
+    const total = summary.payment.totalDueGrosz / 100;
     const amount = total.toFixed(2).replace('.', ',');
     try {
       await navigator.clipboard.writeText(amount);
@@ -1034,7 +1011,8 @@ import { prepareInvoice } from './invoice-input.mjs';
 
   document.getElementById('downloadDraft').addEventListener('click', () => {
     const calc = calculations();
-    if (calc.vatResult.status === 'INVALID') {
+    const vatResult = calc.components.vat.result;
+    if (vatResult.status === 'INVALID') {
       showToast('Nie można przygotować JPK przy błędnym wyniku VAT.', 'error');
       return;
     }
@@ -1046,12 +1024,12 @@ import { prepareInvoice } from './invoice-input.mjs';
       'NIP: ' + state.company.nip,
       'Okres: ' + periodName(),
       'Liczba dokumentów: ' + state.invoices.length,
-      'VAT należny: ' + money(calc.salesVat),
-      'VAT naliczony: ' + money(calc.costVat),
-      'VAT podlegający odliczeniu: ' + money(calc.deductibleVat),
-      'VAT do zapłaty: ' + money(calc.vat),
-      'Nadwyżka do przeniesienia: ' + money((calc.vatResult.carryForwardGrosz || 0) / 100),
-      'Status kalkulatora VAT: ' + calc.vatResult.status,
+      'VAT należny: ' + money((calc.metrics.outputVatGrosz || 0) / 100),
+      'VAT naliczony: ' + money((calc.metrics.inputVatGrosz || 0) / 100),
+      'VAT podlegający odliczeniu: ' + money((calc.metrics.deductibleInputVatGrosz || 0) / 100),
+      'VAT do zapłaty: ' + money((calc.components.vat.dueGrosz || 0) / 100),
+      'Nadwyżka do przeniesienia: ' + money((vatResult.carryForwardGrosz || 0) / 100),
+      'Status kalkulatora VAT: ' + vatResult.status,
       '',
       'To plik demonstracyjny, nie jest deklaracją gotową do wysyłki.'
     ].join('\r\n');

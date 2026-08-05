@@ -352,7 +352,7 @@ Normatywna specyfikacja zakresu, kontraktu, algorytmu, statusów i kryteriów uk
 
 ## Integracja kalkulatorów z aplikacją
 
-`app.js` orkiestruje niezależne kalkulatory i nie może utrzymywać równoległego wzoru ryczałtu, VAT ani ZUS. Dane faktur są mapowane przez:
+`monthly-summary.mjs` jest czystym generatorem miesięcznego podsumowania i jedynym miejscem orkiestracji niezależnych kalkulatorów. `app.js` przekazuje dane wybranego okresu do `generateMonthlySummary()` i zajmuje się wyłącznie prezentacją wyniku. Żaden z tych modułów nie utrzymuje równoległego wzoru ryczałtu, VAT ani ZUS. Dane faktur są mapowane przez:
 
 - `ryczalt-adapter.mjs` do kontraktu `calculateRyczalt()`;
 - `vat-adapter.mjs` do kontraktu `calculateVat()`;
@@ -360,7 +360,9 @@ Normatywna specyfikacja zakresu, kontraktu, algorytmu, statusów i kryteriów uk
 
 Adapter ryczałtu uwzględnia wyłącznie sprzedaż z wybranego miesiąca, a przychód narastający buduje ze sprzedaży od początku tego samego roku do końca wybranego miesiąca. Jawne `revenuePeriod` ma pierwszeństwo; w obecnym prototypie jego braku używana jest data dokumentu. Koszty nie wchodzą do przychodu ryczałtowego. Stawki z UI są przeliczane na całkowite punkty bazowe, a odliczenie na całkowite grosze przed przekazaniem do kalkulatora.
 
-Obecny interfejs nie zapisuje kompletnej klasyfikacji PKWiU, podstawy prawnej ani decyzji podatkowej. Adapter nie uzupełnia ich fikcyjnymi danymi, dlatego wynik ryczałtu pozostaje `REVIEW_REQUIRED`, dopóki te informacje nie zostaną jawnie dostarczone. Status całego rozliczenia uwzględnia niezależnie status ryczałtu i VAT; błąd któregokolwiek kalkulatora blokuje łączną kwotę przelewów.
+Generator zwraca wszystkie kwoty pieniężne jako całkowite grosze. Wynik zawiera wspólny status, komponenty `ryczalt`, `vat` i `zus`, metryki dokumentów, ustalenia ze wskazaniem obszaru oraz audyt wersji reguł i identyfikatorów dokumentów. `INVALID` lub brak kwoty któregokolwiek zobowiązania blokuje łączną kwotę. Przy `REVIEW_REQUIRED` kwota robocza może pozostać widoczna, ale `payment.canCreateTransfers` ma wartość `false`; przelewy są dostępne dopiero dla kompletnego wyniku `VERIFIED`.
+
+Obecny interfejs nie zapisuje kompletnej klasyfikacji PKWiU, podstawy prawnej ani decyzji podatkowej. Adapter nie uzupełnia ich fikcyjnymi danymi, dlatego wynik ryczałtu pozostaje `REVIEW_REQUIRED`, dopóki te informacje nie zostaną jawnie dostarczone. Status całego rozliczenia uwzględnia niezależnie status ryczałtu, VAT i ZUS.
 
 ## Iteracja kalkulatora ZUS
 

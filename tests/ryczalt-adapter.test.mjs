@@ -99,25 +99,30 @@ test("brak kategorii sprzedaży pozostaje jawnym błędem kalkulatora", () => {
   assert.ok(result.findings.some(({ code }) => code === "MISSING_CATEGORY"));
 });
 
-test("app używa obu kalkulatorów, a build publikuje oba adaptery", async () => {
-  const [app, build, html] = await Promise.all([
+test("app używa generatora, a generator orkiestruje kalkulatory", async () => {
+  const [app, summary, build, html] = await Promise.all([
     readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../monthly-summary.mjs", import.meta.url), "utf8"),
     readFile(new URL("../scripts/build.mjs", import.meta.url), "utf8"),
     readFile(new URL("../index.html", import.meta.url), "utf8"),
   ]);
 
-  assert.match(app, /import \{ calculateRyczalt \} from ['"]\.\/ryczalt-calculator\.mjs['"]/);
-  assert.match(app, /createRyczaltInputFromInvoices\(/);
-  assert.match(app, /calculateRyczalt\(ryczaltInput\)/);
+  assert.match(app, /import \{ generateMonthlySummary \} from ['"]\.\/monthly-summary\.mjs['"]/);
+  assert.match(app, /generateMonthlySummary\(\{/);
+  assert.match(summary, /createRyczaltInputFromInvoices\(/);
+  assert.match(summary, /calculateRyczalt\(ryczaltInput\)/);
+  assert.match(summary, /createVatInputFromInvoices\(/);
+  assert.match(summary, /calculateVat\(vatInput\)/);
   assert.doesNotMatch(app, /base\s*\*\s*rate\s*\/\s*100/);
   assert.match(build, /['"]ryczalt-adapter\.mjs['"]/);
+  assert.match(build, /['"]monthly-summary\.mjs['"]/);
   assert.match(html, /id="pitStatus"/);
   assert.match(html, /id="vatStatus"/);
   assert.match(html, /id="verificationView"/);
   assert.match(html, /id="saveCategoryProfiles"/);
   assert.match(html, /PKWiU jest częścią profilu działalności/);
   assert.match(app, /categoryMetadata: state\.categoryProfiles/);
-  assert.match(app, /ryczaltSettingsForPeriod\(\)\.deductionGrosz/);
+  assert.match(app, /deductionGrosz: ryczaltSettings\.deductionGrosz/);
   assert.match(app, /noSalesConfirmed/);
   assert.doesNotMatch(app, /state\.rules\.revenueDeduction/);
   assert.match(app, /reviewPit \? 'Do weryfikacji'/);

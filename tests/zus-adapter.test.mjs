@@ -38,20 +38,22 @@ test("błędna kwota trafia do walidacji kalkulatora zamiast być zerowana", () 
   assert.equal(Number.isNaN(input.healthRevenueYtdGrosz), true);
 });
 
-test("aplikacja używa kalkulatora ZUS, a build publikuje wszystkie moduły", async () => {
-  const [app, build, html] = await Promise.all([
+test("generator używa kalkulatora ZUS, a build publikuje wszystkie moduły", async () => {
+  const [app, summary, build, html] = await Promise.all([
     readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../monthly-summary.mjs", import.meta.url), "utf8"),
     readFile(new URL("../scripts/build.mjs", import.meta.url), "utf8"),
     readFile(new URL("../index.html", import.meta.url), "utf8"),
   ]);
 
-  assert.match(app, /import \{ calculateZus \} from ['"]\.\/zus-calculator\.mjs['"]/);
-  assert.match(app, /createZusInputFromInvoices\(/);
-  assert.match(app, /calculateZus\(zusInput\)/);
+  assert.match(app, /import \{ generateMonthlySummary \} from ['"]\.\/monthly-summary\.mjs['"]/);
+  assert.match(summary, /createZusInputFromInvoices\(/);
+  assert.match(summary, /calculateZus\(zusInput\)/);
   assert.doesNotMatch(app, /state\.rules\.socialZus|state\.rules\.healthZus/);
   assert.match(build, /['"]zus-rules\.mjs['"]/);
   assert.match(build, /['"]zus-calculator\.mjs['"]/);
   assert.match(build, /['"]zus-adapter\.mjs['"]/);
+  assert.match(build, /['"]monthly-summary\.mjs['"]/);
   assert.match(html, /id="zusStatus"/);
   assert.doesNotMatch(html, /id="socialZus"|id="healthZus"/);
 });

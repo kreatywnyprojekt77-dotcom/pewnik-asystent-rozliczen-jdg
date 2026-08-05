@@ -72,7 +72,8 @@ const runtimeFiles = [
   'vat-adapter.mjs',
   'zus-rules.mjs',
   'zus-calculator.mjs',
-  'zus-adapter.mjs'
+  'zus-adapter.mjs',
+  'monthly-summary.mjs'
 ];
 
 await Promise.all(runtimeFiles.map(file =>
