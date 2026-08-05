@@ -1,8 +1,8 @@
 import { VAT_RULE_VERSION } from "./vat-calculator.mjs";
+import { parseMoneyToGrosz } from "./invoice-input.mjs";
 
 function toGrosz(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.sign(number) * Math.round(Math.abs(number) * 100 + Number.EPSILON) : null;
+  return parseMoneyToGrosz(value);
 }
 
 function roundSigned(value) {
@@ -41,12 +41,15 @@ function amountRows(invoice) {
       ...(invoice.type === "cost" ? deductionFor(line, invoice) : {}),
     }));
   }
+  const taxableBaseGrosz = Number.isSafeInteger(invoice.netGrosz) ? invoice.netGrosz : toGrosz(invoice.net);
   const vatAmountGrosz = invoice.vatAmount != null
     ? toGrosz(invoice.vatAmount)
-    : roundSigned(toGrosz(invoice.net) * Number(invoice.vatRate) / 100);
+    : (Number.isSafeInteger(taxableBaseGrosz)
+      ? roundSigned(taxableBaseGrosz * Number(invoice.vatRate) / 100)
+      : null);
   const row = {
     vatCode: normalizedVatCode(invoice),
-    taxableBaseGrosz: toGrosz(invoice.net),
+    taxableBaseGrosz,
     vatAmountGrosz,
   };
   if (invoice.type === "cost") Object.assign(row, deductionFor({ vatAmountGrosz }, invoice));

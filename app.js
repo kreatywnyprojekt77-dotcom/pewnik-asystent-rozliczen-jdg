@@ -2,6 +2,7 @@ import { calculateVat } from './vat-calculator.mjs';
 import { createVatInputFromInvoices } from './vat-adapter.mjs';
 import { calculateRyczalt } from './ryczalt-calculator.mjs';
 import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
+import { prepareInvoice } from './invoice-input.mjs';
 
 (function () {
   'use strict';
@@ -831,30 +832,32 @@ import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
     const data = new FormData(form);
     const type = data.get('invoiceType');
     const documentType = String(data.get('documentType'));
-    const net = Number(data.get('net'));
-    if (documentType !== 'correction' && net < 0) {
-      showToast('Ujemna kwota jest dozwolona wyłącznie dla korekty.', 'error');
-      return;
-    }
     const vatCode = String(data.get('vat'));
     const vatRate = Number(vatCode) || 0;
     const effectiveDate = String(data.get('vatEffectiveDate'));
-    const localInvoice = {
+    const prepared = prepareInvoice({
       id: Date.now(),
       number: String(data.get('number')).trim(),
       date: String(data.get('date')),
       contractor: String(data.get('contractor')).trim(),
       type,
-      net,
-      vatRate,
+      net: data.get('net'),
       vatCode,
+      vatRate,
+      currency: 'PLN',
+      source: 'manual',
       documentType,
       supplyDate: type === 'sale' ? effectiveDate : null,
       taxPointDate: type === 'sale' ? effectiveDate : null,
       receivedDate: type === 'cost' ? effectiveDate : null,
       vatDeductionPercent: type === 'cost' ? Number(data.get('vatDeductionPercent')) : null,
       category: type === 'sale' ? String(data.get('category')) : null
-    };
+    });
+    if (prepared.status === 'INVALID') {
+      showToast(prepared.findings[0].message, 'error');
+      return;
+    }
+    const localInvoice = prepared.value;
 
     try {
       const invoice = window.PewnikCloud

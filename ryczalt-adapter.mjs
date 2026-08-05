@@ -1,3 +1,5 @@
+import { parseMoneyToGrosz } from "./invoice-input.mjs";
+
 export const RYCZALT_RULE_VERSION = "PL-RYCZALT-2026.1";
 
 const CATEGORY_NAMES = {
@@ -17,10 +19,7 @@ function revenuePeriod(invoice) {
 }
 
 function toGrosz(value) {
-  const number = Number(value);
-  return Number.isFinite(number)
-    ? Math.sign(number) * Math.round(Math.abs(number) * 100 + Number.EPSILON)
-    : null;
+  return parseMoneyToGrosz(value);
 }
 
 function toBasisPoints(value) {
@@ -67,7 +66,7 @@ export function createRyczaltInputFromInvoices({
       period <= settlementPeriod &&
       categoryIdSet.has(invoice.category)
     ) {
-      const amountGrosz = toGrosz(invoice.net);
+      const amountGrosz = Number.isSafeInteger(invoice.netGrosz) ? invoice.netGrosz : toGrosz(invoice.net);
       yearToDateRevenueByCategory[invoice.category] = Number.isSafeInteger(amountGrosz)
         ? yearToDateRevenueByCategory[invoice.category] + amountGrosz
         : Number.NaN;
@@ -79,7 +78,7 @@ export function createRyczaltInputFromInvoices({
     .map(({ invoice, period }) => ({
       id: String(invoice.id ?? ""),
       period,
-      amountGrosz: toGrosz(invoice.net),
+      amountGrosz: Number.isSafeInteger(invoice.netGrosz) ? invoice.netGrosz : toGrosz(invoice.net),
       categoryId: typeof invoice.category === "string" ? invoice.category : "",
     }));
 

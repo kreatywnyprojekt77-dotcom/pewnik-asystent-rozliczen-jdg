@@ -65,6 +65,7 @@ const runtimeFiles = [
   'styles.css',
   'app.js',
   'supabase-sync.js',
+  'invoice-input.mjs',
   'ryczalt-calculator.mjs',
   'ryczalt-adapter.mjs',
   'vat-calculator.mjs',
