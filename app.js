@@ -2,6 +2,8 @@ import { calculateVat } from './vat-calculator.mjs';
 import { createVatInputFromInvoices } from './vat-adapter.mjs';
 import { calculateRyczalt } from './ryczalt-calculator.mjs';
 import { createRyczaltInputFromInvoices } from './ryczalt-adapter.mjs';
+import { calculateZus } from './zus-calculator.mjs';
+import { createZusInputFromInvoices } from './zus-adapter.mjs';
 import { prepareInvoice } from './invoice-input.mjs';
 
 (function () {
@@ -11,9 +13,7 @@ import { prepareInvoice } from './invoice-input.mjs';
   const defaultRules = {
     software: 12,
     consulting: 15,
-    vatRate: 23,
-    socialZus: 1773.96,
-    healthZus: 769.43
+    vatRate: 23
   };
 
   const defaultCategoryProfiles = {
@@ -57,6 +57,7 @@ import { prepareInvoice } from './invoice-input.mjs';
     categoryProfiles: defaultCategoryProfiles,
     ryczaltSettings: defaultRyczaltSettings,
     vatSettings: { byPeriod: {} },
+    zusSettings: { sicknessInsurance: true, byPeriod: {} },
     tasks: { transfers: false, jpk: false, archive: false },
     company: { name: 'DEMO — Studio Testowe (dane syntetyczne)', nip: '0000000000' }
   };
@@ -69,6 +70,7 @@ import { prepareInvoice } from './invoice-input.mjs';
     categoryProfiles: mergeCategoryProfiles(loaded.categoryProfiles),
     ryczaltSettings: mergePeriodSettings(defaultRyczaltSettings, loaded.ryczaltSettings),
     vatSettings: Object.assign({}, initialState.vatSettings, loaded.vatSettings || {}),
+    zusSettings: Object.assign({}, initialState.zusSettings, loaded.zusSettings || {}),
     tasks: Object.assign({}, initialState.tasks, loaded.tasks || {}),
     company: Object.assign({}, initialState.company, loaded.company || {})
   };
@@ -119,6 +121,7 @@ import { prepareInvoice } from './invoice-input.mjs';
     state.categoryProfiles = mergeCategoryProfiles(nextState.categoryProfiles);
     state.ryczaltSettings = mergePeriodSettings(defaultRyczaltSettings, nextState.ryczaltSettings);
     state.vatSettings = Object.assign({}, initialState.vatSettings, nextState.vatSettings || {});
+    state.zusSettings = Object.assign({}, initialState.zusSettings, nextState.zusSettings || {});
     state.tasks = Object.assign({}, initialState.tasks, nextState.tasks || {});
     state.company = Object.assign({}, initialState.company, nextState.company || {});
     try {
@@ -202,6 +205,16 @@ import { prepareInvoice } from './invoice-input.mjs';
     );
   }
 
+  function zusSettingsForPeriod() {
+    const period = state.period.slice(0, 7);
+    return Object.assign(
+      { healthRevenueDeductionYtdGrosz: 0 },
+      state.zusSettings && state.zusSettings.byPeriod
+        ? state.zusSettings.byPeriod[period]
+        : null
+    );
+  }
+
   function formatDate(date, includeYear = true) {
     return new Intl.DateTimeFormat('pl-PL', includeYear
       ? { day: 'numeric', month: 'long', year: 'numeric' }
@@ -245,6 +258,13 @@ import { prepareInvoice } from './invoice-input.mjs';
       categoryMetadata: state.categoryProfiles
     });
     const pitResult = calculateRyczalt(ryczaltInput);
+    const zusInput = createZusInputFromInvoices({
+      invoices: state.invoices,
+      settlementPeriod,
+      healthRevenueDeductionYtdGrosz: zusSettingsForPeriod().healthRevenueDeductionYtdGrosz,
+      sicknessInsurance: state.zusSettings.sicknessInsurance !== false
+    });
+    const zusResult = calculateZus(zusInput);
     const includedPitIds = new Set(pitResult.audit.inputRevenueIds.map(String));
     const includedVatIds = new Set(vatResult.audit.includedEntryIds.map(String));
     const sales = state.invoices.filter(invoice => invoice.type === 'sale' && includedPitIds.has(String(invoice.id)));
@@ -254,12 +274,12 @@ import { prepareInvoice } from './invoice-input.mjs';
     const deduction = pitResult.deductionTotalGrosz == null ? null : pitResult.deductionTotalGrosz / 100;
     const taxableRevenue = pitResult.taxableBaseBeforeRoundingGrosz == null ? null : pitResult.taxableBaseBeforeRoundingGrosz / 100;
     const pit = pitResult.taxDuePln;
-    const zus = Number(state.rules.socialZus) + Number(state.rules.healthZus);
-    const calculationInvalid = vatResult.status === 'INVALID' || pitResult.status === 'INVALID' || pit == null;
+    const zus = zusResult.totalDueGrosz == null ? null : zusResult.totalDueGrosz / 100;
+    const calculationInvalid = vatResult.status === 'INVALID' || pitResult.status === 'INVALID' || zusResult.status === 'INVALID' || pit == null;
 
     return {
       sales, costs, revenue, costsNet, salesVat, costVat, deductibleVat, vat, vatResult,
-      deduction, taxableRevenue, pitResult, pit, zus,
+      deduction, taxableRevenue, pitResult, pit, zus, zusResult,
       total: calculationInvalid ? null : pit + vat + zus
     };
   }
@@ -302,14 +322,16 @@ import { prepareInvoice } from './invoice-input.mjs';
     const reviewPit = calc.pitResult.status === 'REVIEW_REQUIRED';
     const invalidVat = calc.vatResult.status === 'INVALID';
     const reviewVat = calc.vatResult.status === 'REVIEW_REQUIRED';
-    const invalidOverall = invalidPit || invalidVat;
-    const reviewOverall = !invalidOverall && (reviewPit || reviewVat);
+    const invalidZus = calc.zusResult.status === 'INVALID';
+    const reviewZus = calc.zusResult.status === 'REVIEW_REQUIRED';
+    const invalidOverall = invalidPit || invalidVat || invalidZus;
+    const reviewOverall = !invalidOverall && (reviewPit || reviewVat || reviewZus);
     const blockedOverall = invalidOverall || calc.pit == null;
     setText('grandTotal', calc.total == null ? '—' : money(calc.total));
     setText('settlementTotal', calc.total == null ? '—' : money(calc.total));
     setText('pitAmount', calc.pit == null ? '—' : money(calc.pit));
     setText('vatAmount', invalidVat ? '—' : money(calc.vat));
-    setText('zusAmount', money(calc.zus));
+    setText('zusAmount', invalidZus || calc.zus == null ? '—' : money(calc.zus));
     setText('revenueMetric', calc.revenue == null ? '—' : money(calc.revenue));
     setText('costMetric', money(calc.costsNet));
     setText('vatMetric', invalidVat ? '—' : money(calc.vat));
@@ -325,6 +347,9 @@ import { prepareInvoice } from './invoice-input.mjs';
     const vatStatus = document.getElementById('vatStatus');
     vatStatus.textContent = calc.vatResult.status === 'VERIFIED' ? (calc.vatResult.excessGrosz > 0 ? 'Nadwyżka' : 'Do zapłaty') : (calc.vatResult.status === 'INVALID' ? 'Błąd danych' : 'Do weryfikacji');
     vatStatus.className = 'status-pill ' + (calc.vatResult.status === 'VERIFIED' ? 'neutral' : (calc.vatResult.status === 'INVALID' ? 'error' : 'warning'));
+    const zusStatus = document.getElementById('zusStatus');
+    zusStatus.textContent = invalidZus ? 'Błąd danych' : (reviewZus ? 'Do weryfikacji' : 'Do zapłaty');
+    zusStatus.className = 'status-pill ' + (invalidZus ? 'error' : (reviewZus ? 'warning' : 'neutral'));
     setText('calculationReadinessTitle', invalidOverall ? 'Rozliczenie wymaga poprawy danych' : (reviewOverall ? 'Rozliczenie wymaga sprawdzenia' : 'Rozliczenie jest gotowe'));
     setText('calculationReadinessDescription', invalidOverall ? 'Popraw dane wskazane w Centrum weryfikacji przed przygotowaniem płatności.' : (reviewOverall ? 'Przejdź przez krótką listę zadań i potwierdź brakujące informacje.' : 'Nie znaleźliśmy braków ani sytuacji wymagających uwagi.'));
     const overallStatus = document.getElementById('overallCalculationStatus');
@@ -360,10 +385,16 @@ import { prepareInvoice } from './invoice-input.mjs';
         : '<div class="detail-row"><span>VAT do zapłaty</span><strong>' + money(calc.vat) + '</strong></div>') +
       findingSummary(calc.vatResult.findings, 'vat');
 
+    const zusSocialRows = calc.zusResult.socialRows.map(row =>
+      '<div class="detail-row"><span>' + escapeHtml(row.label) + ' · ' + number(row.rateBasisPoints / 100) + '%</span><strong>' + money(row.amountGrosz / 100) + '</strong></div>'
+    ).join('');
     document.getElementById('zusDetails').innerHTML =
-      '<div class="detail-row"><span>Składki społeczne</span><strong>' + money(state.rules.socialZus) + '</strong></div>' +
-      '<div class="detail-row"><span>Składka zdrowotna</span><strong>' + money(state.rules.healthZus) + '</strong></div>' +
-      '<div class="detail-row"><span>Składki do zapłaty</span><strong>' + money(calc.zus) + '</strong></div>';
+      '<div class="detail-row"><span>Podstawa składek społecznych</span><strong>' + (calc.zusResult.socialBaseGrosz == null ? '—' : money(calc.zusResult.socialBaseGrosz / 100)) + '</strong></div>' +
+      zusSocialRows +
+      '<div class="detail-row"><span>Przychód dla zdrowotnej narastająco</span><strong>' + (calc.zusResult.healthRevenueYtdGrosz == null ? '—' : money(calc.zusResult.healthRevenueYtdGrosz / 100)) + '</strong></div>' +
+      '<div class="detail-row"><span>Składka zdrowotna</span><strong>' + (calc.zusResult.healthContributionGrosz == null ? '—' : money(calc.zusResult.healthContributionGrosz / 100)) + '</strong></div>' +
+      '<div class="detail-row"><span>Składki do zapłaty</span><strong>' + (calc.zus == null ? '—' : money(calc.zus)) + '</strong></div>' +
+      findingSummary(calc.zusResult.findings.filter(item => item.severity !== 'info'), 'zus');
 
     renderInvoices();
     renderVerification(calc);
@@ -380,7 +411,9 @@ import { prepareInvoice } from './invoice-input.mjs';
     });
     const actionText = area === 'pit'
       ? 'Otwórz Centrum weryfikacji, aby uzupełnić stały profil kategorii lub dane tego miesiąca.'
-      : 'Otwórz Centrum weryfikacji, aby sprawdzić dokumenty i decyzje dotyczące VAT.';
+      : (area === 'zus'
+        ? 'Sprawdź profil ZUS i przychód narastający wykorzystany do obliczeń.'
+        : 'Otwórz Centrum weryfikacji, aby sprawdzić dokumenty i decyzje dotyczące VAT.');
     const rows = [...grouped.values()].map(({ item, count }) =>
       '<div class="technical-finding"><strong>' + escapeHtml(item.code) + (count > 1 ? ' × ' + count : '') + '</strong><span>' + escapeHtml(item.message) + '</span></div>'
     ).join('');
@@ -551,8 +584,6 @@ import { prepareInvoice } from './invoice-input.mjs';
     setTextInput('rateSoftware', state.rules.software);
     setTextInput('rateConsulting', state.rules.consulting);
     setTextInput('vatRate', state.rules.vatRate);
-    setTextInput('socialZus', state.rules.socialZus);
-    setTextInput('healthZus', state.rules.healthZus);
     setTextInput('openingVatCarry', vatSettings.openingCarryForwardGrosz / 100);
     document.getElementById('vatExcessMode').value = vatSettings.excessMode;
   }
@@ -567,9 +598,7 @@ import { prepareInvoice } from './invoice-input.mjs';
     state.rules = {
       software: value('rateSoftware'),
       consulting: value('rateConsulting'),
-      vatRate: state.rules.vatRate,
-      socialZus: value('socialZus'),
-      healthZus: value('healthZus')
+      vatRate: state.rules.vatRate
     };
     const byPeriod = Object.assign({}, state.vatSettings.byPeriod || {});
     byPeriod[state.period.slice(0, 7)] = {

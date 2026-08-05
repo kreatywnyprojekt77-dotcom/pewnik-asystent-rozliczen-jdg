@@ -135,7 +135,7 @@
               <div class="obligation-accent violet"></div>
               <div class="obligation-top">
                 <div class="obligation-title"><span class="tax-icon violet-bg">ZUS</span><div><span>Składki ZUS</span><strong id="zusAmount">2 543,39 zł</strong></div></div>
-                <span class="status-pill neutral">Do zapłaty</span>
+                <span class="status-pill neutral" id="zusStatus">Do zapłaty</span>
               </div>
               <div class="deadline-row"><svg viewBox="0 0 24 24"><path d="M5 5h14v15H5V5Zm3-3v6M16 2v6M5 10h14"/></svg><span>Termin: <strong id="zusDeadline">20 lipca 2026</strong></span><span class="days-left">za 8 dni</span></div>
               <button class="calculation-toggle" aria-expanded="false">Jak to policzyliśmy?<svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></button>
@@ -274,10 +274,10 @@
               <label class="select-label">Sposób rozliczenia nowej nadwyżki<select id="vatExcessMode"><option value="CARRY_FORWARD">Przenieś na kolejny okres</option><option value="REFUND">Wniosek o zwrot</option></select></label>
             </div>
             <div class="rule-separator"></div>
-            <div class="section-heading"><div><p class="eyebrow">Składki</p><h2>Standardowy ZUS</h2></div></div>
+            <div class="section-heading"><div><p class="eyebrow">Składki</p><h2>Standardowy ZUS</h2></div><span class="version-tag">PL-ZUS-2026.1</span></div>
             <div class="form-grid">
-              <label>Składki społeczne<div class="input-suffix"><input type="number" step="0.01" min="0" id="socialZus"><span>zł</span></div></label>
-              <label>Składka zdrowotna<div class="input-suffix"><input type="number" step="0.01" min="0" id="healthZus"><span>zł</span></div></label>
+              <label class="switch-row"><span><strong>Minimalna podstawa standardowa</strong><small>Bez ulg i Małego ZUS Plus</small></span><input type="checkbox" checked disabled><span class="switch"></span></label>
+              <label class="switch-row"><span><strong>Dobrowolne chorobowe</strong><small>Uwzględnione w kalkulacji</small></span><input type="checkbox" checked disabled><span class="switch"></span></label>
             </div>
             <button class="primary-button" id="saveRules">Zapisz i przelicz</button>
           </article>
