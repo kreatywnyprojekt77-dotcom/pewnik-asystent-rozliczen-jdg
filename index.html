@@ -87,8 +87,8 @@
 
         <div class="ready-banner">
           <div class="ready-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 12 3 3 7-7"/></svg></div>
-          <div><strong>Rozliczenie za <span data-period-text>czerwiec 2026</span> jest gotowe</strong><span>Nie znaleźliśmy braków ani sytuacji wymagających uwagi.</span></div>
-          <span class="status-pill success">Gotowe</span>
+          <div><strong id="calculationReadinessTitle">Rozliczenie jest gotowe</strong><span id="calculationReadinessDescription">Nie znaleźliśmy braków ani sytuacji wymagających uwagi.</span></div>
+          <span class="status-pill success" id="overallCalculationStatus">Gotowe</span>
         </div>
 
         <div class="summary-grid">
@@ -108,7 +108,7 @@
               <div class="obligation-accent blue"></div>
               <div class="obligation-top">
                 <div class="obligation-title"><span class="tax-icon blue-bg">%</span><div><span>Ryczałt (PIT-28)</span><strong id="pitAmount">2 936,41 zł</strong></div></div>
-                <span class="status-pill neutral">Do zapłaty</span>
+                <span class="status-pill neutral" id="vatStatus">Do zapłaty</span>
               </div>
               <div class="deadline-row"><svg viewBox="0 0 24 24"><path d="M5 5h14v15H5V5Zm3-3v6M16 2v6M5 10h14"/></svg><span>Termin: <strong id="pitDeadline">20 lipca 2026</strong></span><span class="days-left">za 8 dni</span></div>
               <button class="calculation-toggle" aria-expanded="false">Jak to policzyliśmy?<svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></button>
@@ -177,7 +177,7 @@
           </div>
           <div class="invoice-table-wrap">
             <table class="invoice-table">
-              <thead><tr><th>Dokument</th><th>Kontrahent</th><th>Typ</th><th>Netto</th><th>VAT</th><th>Ryczałt</th><th></th></tr></thead>
+              <thead><tr><th>Dokument</th><th>Kontrahent</th><th>Typ</th><th>Netto</th><th>VAT</th><th>Klasyfikacja</th><th></th></tr></thead>
               <tbody id="invoiceTableBody"></tbody>
             </table>
           </div>
@@ -202,8 +202,13 @@
             <div class="form-grid">
               <label>Usługi programistyczne<div class="input-suffix"><input type="number" step="0.1" min="0" id="rateSoftware"><span>%</span></div></label>
               <label>Usługi konsultingowe<div class="input-suffix"><input type="number" step="0.1" min="0" id="rateConsulting"><span>%</span></div></label>
-              <label>VAT sprzedaży<div class="input-suffix"><input type="number" step="1" min="0" id="vatRate"><span>%</span></div></label>
               <label>Odliczenie od przychodu<div class="input-suffix"><input type="number" step="0.01" min="0" id="revenueDeduction"><span>zł</span></div></label>
+            </div>
+            <div class="rule-separator"></div>
+            <div class="section-heading"><div><p class="eyebrow">VAT</p><h2>Rozliczenie nadwyżki</h2></div><span class="version-tag">PL-VAT-2026.1</span></div>
+            <div class="form-grid">
+              <label>Nadwyżka z poprzedniego okresu<div class="input-suffix"><input type="number" step="0.01" min="0" id="openingVatCarry"><span>zł</span></div></label>
+              <label class="select-label">Sposób rozliczenia nowej nadwyżki<select id="vatExcessMode"><option value="CARRY_FORWARD">Przenieś na kolejny okres</option><option value="REFUND">Wniosek o zwrot</option></select></label>
             </div>
             <div class="rule-separator"></div>
             <div class="section-heading"><div><p class="eyebrow">Składki</p><h2>Standardowy ZUS</h2></div></div>
@@ -229,6 +234,29 @@
           <div class="settings-section"><div><h2>Dane działalności</h2><p>Bez logowania dane pozostają w tej przeglądarce. Po połączeniu konta są również synchronizowane z Supabase.</p></div><div class="form-stack"><label>Nazwa firmy<input id="companyName" value="DEMO — Studio Testowe (dane syntetyczne)"></label><label>NIP<input id="companyNip" value="0000000000" inputmode="numeric"></label></div></div>
           <div class="settings-separator"></div>
           <div class="settings-section"><div><h2>Profil rozliczeń</h2><p>Prototyp obsługuje podstawowy wariant JDG.</p></div><div class="form-stack compact"><label class="select-label">Forma opodatkowania<select disabled><option>Ryczałt od przychodów ewidencjonowanych</option></select></label><label class="switch-row"><span><strong>Czynny podatnik VAT</strong><small>Rozliczenie miesięczne</small></span><input type="checkbox" checked disabled><span class="switch"></span></label><label class="switch-row"><span><strong>Standardowy ZUS</strong><small>Bez ulg i Małego ZUS Plus</small></span><input type="checkbox" checked disabled><span class="switch"></span></label></div></div>
+          <div class="settings-separator"></div>
+          <div class="settings-section ksef-settings">
+            <div>
+              <div class="settings-title-row"><h2>KSeF API</h2><span class="environment-badge">TEST</span></div>
+              <p>Bezpieczne połączenie przez Supabase Edge Function. Token KSeF nie jest wysyłany do przeglądarki.</p>
+              <a class="inline-link" href="https://api-test.ksef.mf.gov.pl/docs/v2" target="_blank" rel="noreferrer">Dokumentacja środowiska testowego ↗</a>
+            </div>
+            <div class="ksef-panel">
+              <div class="ksef-status-row">
+                <span class="ksef-status-dot" id="ksefStatusDot"></span>
+                <div><strong id="ksefStatusTitle">Wymaga logowania</strong><small id="ksefStatusDescription">Zaloguj się do Supabase, aby korzystać z integracji.</small></div>
+              </div>
+              <dl class="ksef-meta">
+                <div><dt>Środowisko</dt><dd>TEST</dd></div>
+                <div><dt>Ostatnia synchronizacja</dt><dd id="ksefLastSync">—</dd></div>
+              </dl>
+              <div class="ksef-actions">
+                <button class="secondary-button" id="testKsefConnection" type="button">Testuj połączenie</button>
+                <button class="primary-button" id="syncKsefInvoices" type="button">Pobierz faktury</button>
+              </div>
+              <p class="ksef-hint">Synchronizacja pobiera metadane faktur sprzedażowych i kosztowych z ostatnich 30 dni, a później działa przyrostowo.</p>
+            </div>
+          </div>
           <div class="settings-actions"><button class="primary-button" id="saveSettings">Zapisz ustawienia</button></div>
         </article>
       </section>
@@ -243,9 +271,12 @@
         <div class="form-grid modal-grid">
           <label>Numer faktury<input name="number" required placeholder="np. FV/07/2026/01"></label>
           <label>Data wystawienia<input name="date" type="date" required></label>
+          <label>Rodzaj dokumentu<select name="documentType"><option value="invoice">Faktura</option><option value="correction">Faktura korygująca</option></select></label>
+          <label><span id="vatEffectiveDateText">Data sprzedaży / wykonania usługi</span><input name="vatEffectiveDate" type="date" required></label>
           <label class="span-2">Kontrahent<input name="contractor" required placeholder="Nazwa firmy"></label>
-          <label>Kwota netto<input name="net" type="number" min="0.01" step="0.01" required placeholder="0,00"></label>
-          <label>Stawka VAT<select name="vat"><option value="23">23%</option><option value="8">8%</option><option value="0">0%</option></select></label>
+          <label>Kwota netto<input name="net" type="number" step="0.01" required placeholder="0,00"></label>
+          <label>Stawka / kod VAT<select name="vat"><option value="23">23%</option><option value="8">8%</option><option value="5">5%</option><option value="0">0%</option><option value="ZW">ZW</option><option value="NP">NP</option></select></label>
+          <label class="span-2 vat-deduction-field" style="display:none">VAT podlegający odliczeniu<select name="vatDeductionPercent"><option value="100">100% — pełne odliczenie</option><option value="50">50% — częściowe odliczenie</option><option value="0">0% — bez odliczenia</option></select></label>
           <label class="span-2 rate-field">Rodzaj usługi / stawka ryczałtu<select name="category"><option value="software">Usługi programistyczne</option><option value="consulting">Usługi konsultingowe</option></select></label>
         </div>
         <div class="modal-actions"><button type="button" class="secondary-button modal-close">Anuluj</button><button type="submit" class="primary-button">Dodaj do rozliczenia</button></div>
@@ -286,6 +317,19 @@
   <div class="toast" id="toast"><span class="toast-icon">✓</span><span id="toastText">Zapisano</span></div>
   <script src="supabase-config.js"></script>
   <script src="supabase-sync.js"></script>
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
+  <script>
+    window.setTimeout(function () {
+      if (window.PEWNIK_APP_READY) return;
+      var accountButton = document.getElementById('accountButton');
+      var accountName = document.getElementById('accountName');
+      var accountStatus = document.getElementById('accountStatus');
+      if (accountName) accountName.textContent = 'Uruchom aplikację przez launcher';
+      if (accountStatus) accountStatus.textContent = 'Wymagany lokalny serwer HTTP';
+      if (accountButton) accountButton.addEventListener('click', function () {
+        window.alert('Zamknij tę kartę i uruchom plik URUCHOM-APLIKACJE.cmd. Bezpośrednie otwarcie index.html blokuje moduły aplikacji.');
+      });
+    }, 1200);
+  </script>
 </body>
 </html>

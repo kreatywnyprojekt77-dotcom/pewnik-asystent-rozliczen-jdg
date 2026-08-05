@@ -1,0 +1,4 @@
+project_id = "pewnik-prototype"
+
+[functions.ksef-sync]
+verify_jwt = true

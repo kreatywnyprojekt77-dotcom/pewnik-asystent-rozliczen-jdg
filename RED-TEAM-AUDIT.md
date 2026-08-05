@@ -99,3 +99,13 @@ Nie czytano ani nie zmieniano `app.js`, UI, VAT, ZUS, Supabase ani KSeF. Nie zmi
 ## Potwierdzenie integralności
 
 Kod produkcyjny nie został zmieniony. Nie zmieniono również README ani istniejących testów. Utworzono wyłącznie `tests/ryczalt-calculator.red-team.test.mjs` oraz `RED-TEAM-AUDIT.md`. Nie wykonano commita.
+
+## Status po utwardzeniu przed wdrożeniem produkcyjnym
+
+W iteracji kalkulatora VAT naprawiono również pięć ustaleń blokujących pełny zestaw testów ryczałtu:
+
+- tablice przychodów i kategorii z pustymi elementami są odrzucane;
+- data zatwierdzenia decyzji jest sprawdzana jako rzeczywista data kalendarzowa;
+- ścieżki ustaleń oraz kolejność walidacji przychodów i kategorii są deterministyczne.
+
+Po zmianach wszystkie testy podstawowe oraz red-team kalkulatora ryczałtu przechodzą. Historyczny opis powyżej pozostaje zapisem stanu z chwili wykonania pierwotnego audytu.

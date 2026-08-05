@@ -165,7 +165,23 @@
       type: row.invoice_type,
       net: Number(row.net_amount),
       vatRate: Number(row.vat_rate),
-      category: row.category
+      vatCode: row.vat_code || String(Number(row.vat_rate)),
+      vatAmount: row.ksef_vat_amount == null ? Number(row.vat_amount) : Number(row.ksef_vat_amount),
+      gross: row.ksef_gross_amount == null ? Number(row.gross_amount) : Number(row.ksef_gross_amount),
+      category: row.category,
+      currency: row.currency || 'PLN',
+      source: row.source || 'manual',
+      ksefNumber: row.ksef_number,
+      ksefStatus: row.ksef_status,
+      ksefAcquisitionDate: row.ksef_acquisition_date,
+      documentType: row.document_type || (Number(row.net_amount) < 0 ? 'correction' : 'invoice'),
+      supplyDate: row.supply_date,
+      taxPointDate: row.tax_point_date,
+      receivedDate: row.received_date,
+      accountingPeriod: row.accounting_period,
+      vatDeductionPercent: row.vat_deduction_percent,
+      deductibleVatGrosz: row.deductible_vat_amount == null ? null : Math.round(Number(row.deductible_vat_amount) * 100),
+      vatLines: Array.isArray(row.vat_lines) ? row.vat_lines : null
     };
   }
 
@@ -178,7 +194,18 @@
       invoice_type: invoice.type,
       net_amount: Number(invoice.net),
       vat_rate: Number(invoice.vatRate),
-      category: invoice.type === 'sale' ? invoice.category : null
+      vat_code: invoice.vatCode || String(Number(invoice.vatRate)),
+      category: invoice.type === 'sale' ? invoice.category : null,
+      source: 'manual',
+      currency: invoice.currency || 'PLN',
+      document_type: invoice.documentType || 'invoice',
+      supply_date: invoice.supplyDate || null,
+      tax_point_date: invoice.taxPointDate || null,
+      received_date: invoice.receivedDate || null,
+      accounting_period: invoice.accountingPeriod || null,
+      vat_deduction_percent: invoice.type === 'cost' ? invoice.vatDeductionPercent : null,
+      deductible_vat_amount: Number.isSafeInteger(invoice.deductibleVatGrosz) ? invoice.deductibleVatGrosz / 100 : null,
+      vat_lines: Array.isArray(invoice.vatLines) ? invoice.vatLines : null
     };
   }
 
@@ -276,6 +303,15 @@
     if (error) throw error;
   }
 
+  async function updateInvoiceVatDeduction(invoiceId, percent) {
+    if (!currentUser) return;
+    const { error } = await client
+      .from('invoices')
+      .update({ vat_deduction_percent: percent, deductible_vat_amount: null, updated_at: new Date().toISOString() })
+      .eq('id', invoiceId);
+    if (error) throw error;
+  }
+
   async function deleteInvoice(invoiceId) {
     if (!currentUser) return;
     const { error } = await client
@@ -283,6 +319,52 @@
       .delete()
       .eq('id', invoiceId);
     if (error) throw error;
+  }
+
+  async function ksefFunctionError(error) {
+    if (error && error.context && typeof error.context.json === 'function') {
+      try {
+        const payload = await error.context.json();
+        if (payload && payload.error) return new Error(payload.error);
+      } catch (_) {
+        // Supabase zwróci standardowy komunikat funkcji.
+      }
+    }
+    return error instanceof Error ? error : new Error('Nie udało się wywołać funkcji KSeF.');
+  }
+
+  async function invokeKsef(action, nip) {
+    if (!isConfigured || !client || !currentUser) {
+      throw new Error('Najpierw zaloguj się do Supabase.');
+    }
+    const { data, error } = await client.functions.invoke('ksef-sync', {
+      body: { action, nip }
+    });
+    if (error) throw await ksefFunctionError(error);
+    if (data && data.error) throw new Error(data.error);
+    return data;
+  }
+
+  async function getKsefConnection() {
+    if (!isConfigured || !client || !currentUser) return null;
+    const { data, error } = await client
+      .from('ksef_connections')
+      .select('environment,nip,status,last_sync_at,last_error')
+      .eq('user_id', currentUser.id)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  async function testKsefConnection(nip) {
+    return invokeKsef('status', nip);
+  }
+
+  async function syncKsefInvoices(nip) {
+    const result = await invokeKsef('sync', nip);
+    const invoices = await readInvoices();
+    app.replaceState(Object.assign({}, app.getState(), { invoices }));
+    return result;
   }
 
   function queueSave(state) {
@@ -304,6 +386,9 @@
     currentUser = nextUser;
     updateAccountUi();
     if (currentUser) await loadRemoteState(currentUser);
+    window.dispatchEvent(new CustomEvent('pewnik:cloud-session', {
+      detail: { signedIn: Boolean(currentUser) }
+    }));
   }
 
   async function init(appApi) {
@@ -348,6 +433,11 @@
     queueSave,
     createInvoice,
     updateInvoiceCategory,
-    deleteInvoice
+    updateInvoiceVatDeduction,
+    deleteInvoice,
+    getKsefConnection,
+    testKsefConnection,
+    syncKsefInvoices,
+    isSignedIn: () => Boolean(currentUser)
   };
 })();

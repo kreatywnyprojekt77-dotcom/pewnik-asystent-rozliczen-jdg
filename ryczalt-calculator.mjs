@@ -17,6 +17,21 @@ function isPeriod(value) {
   return typeof value === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
 }
 
+function isDenseArray(value) {
+  if (!Array.isArray(value)) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.prototype.hasOwnProperty.call(value, index)) return false;
+  }
+  return true;
+}
+
+function isCalendarDate(value) {
+  if (typeof value !== "string" || !/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
 function lexicalCompare(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -128,11 +143,11 @@ function validateTopLevel(input, result) {
       "ruleVersion",
     );
   }
-  if (!Array.isArray(input.revenues)) {
-    addError(result, "INVALID_REVENUES", "Przychody muszą być tablicą.", "revenues");
+  if (!isDenseArray(input.revenues)) {
+    addError(result, "INVALID_REVENUES", "Przychody muszą być pełną tablicą bez pustych elementów.", "revenues");
   }
-  if (!Array.isArray(input.categories)) {
-    addError(result, "INVALID_CATEGORIES", "Kategorie muszą być tablicą.", "categories");
+  if (!isDenseArray(input.categories)) {
+    addError(result, "INVALID_CATEGORIES", "Kategorie muszą być pełną tablicą bez pustych elementów.", "categories");
   }
   if (!isRecord(input.yearToDateRevenueByCategory)) {
     addError(
@@ -157,8 +172,16 @@ function validateCategories(input, result) {
   const categoryById = new Map();
   if (!Array.isArray(input.categories)) return categoryById;
 
-  input.categories.forEach((category, index) => {
-    const path = `categories[${index}]`;
+  const orderedCategories = input.categories
+    .map((category, index) => ({ category, index }))
+    .sort((left, right) => {
+      const leftId = isRecord(left.category) && isNonEmptyString(left.category.id) ? left.category.id : `~${left.index}`;
+      const rightId = isRecord(right.category) && isNonEmptyString(right.category.id) ? right.category.id : `~${right.index}`;
+      return lexicalCompare(leftId, rightId);
+    });
+
+  orderedCategories.forEach(({ category, index }) => {
+    const path = isRecord(category) && isNonEmptyString(category.id) ? `categories[${category.id}]` : `categories[${index}]`;
     if (!isRecord(category)) {
       addError(result, "INVALID_CATEGORY", "Kategoria musi być obiektem.", path);
       return;
@@ -211,6 +234,8 @@ function validateCategories(input, result) {
       isNonEmptyString(decision.reference);
     if (!completeDecision) {
       addWarning(result, "MISSING_DECISION", "Niepełna decyzja podatkowa wymaga weryfikacji.", `${path}.decision`, [id]);
+    } else if (!isCalendarDate(decision.approvedAt)) {
+      addError(result, "INVALID_DECISION_DATE", "Data zatwierdzenia decyzji nie istnieje w kalendarzu.", `${path}.decision.approvedAt`, [id]);
     }
   });
 
@@ -222,8 +247,16 @@ function validateRevenues(input, result, categoryById) {
   const ids = new Set();
   if (!Array.isArray(input.revenues)) return rows;
 
-  input.revenues.forEach((revenue, index) => {
-    const path = `revenues[${index}]`;
+  const orderedRevenues = input.revenues
+    .map((revenue, index) => ({ revenue, index }))
+    .sort((left, right) => {
+      const leftId = isRecord(left.revenue) && isNonEmptyString(left.revenue.id) ? left.revenue.id : `~${left.index}`;
+      const rightId = isRecord(right.revenue) && isNonEmptyString(right.revenue.id) ? right.revenue.id : `~${right.index}`;
+      return lexicalCompare(leftId, rightId);
+    });
+
+  orderedRevenues.forEach(({ revenue, index }) => {
+    const path = isRecord(revenue) && isNonEmptyString(revenue.id) ? `revenues[${revenue.id}]` : `revenues[${index}]`;
     if (!isRecord(revenue)) {
       addError(result, "INVALID_REVENUE", "Pozycja przychodu musi być obiektem.", path);
       return;
