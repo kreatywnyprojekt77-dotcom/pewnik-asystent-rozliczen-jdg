@@ -85,5 +85,9 @@ test("eksport ZUS jest jednoznacznie oznaczony jako techniczny", () => {
   const document = createDeclarationBundle({ company, declarationProfile, invoices, summary, period: "2026-06" }).documents.zus;
   const xml = generateZusDraKeduDraftXml(document);
   assert.match(xml, /status="WERSJA_TECHNICZNA_DO_TESTOW_ZUS"/);
+  assert.match(xml, /<PEWNIK_ZUS_DRA_DRAFT/);
+  assert.doesNotMatch(xml, /<KEDU\b/);
   assert.match(xml, /<razem>2227\.48<\/razem>/);
+  assert.equal(document.targetSchema, "KEDU-2.27");
+  assert.equal(document.acceptanceStatus, "NOT_TESTED_BY_ZUS");
 });
