@@ -231,6 +231,10 @@ function buildZusDocument(company, profile, summary, period) {
     kind: "ZUS_DRA",
     title: "ZUS DRA — deklaracja rozliczeniowa",
     schemaVersion: DECLARATION_SCHEMA_VERSIONS.zus,
+    targetSchema: "KEDU-2.27",
+    exportMode: "TECHNICAL_DRAFT",
+    acceptanceStatus: "NOT_TESTED_BY_ZUS",
+    officialSpecificationUrl: "https://www.zus.pl/bip/wymagania-dla-oprogramowania-interfejsowego/dokumenty-ubezpieczeniowe",
     period,
     status: statusFor(findings, result.status),
     findings,
@@ -392,7 +396,7 @@ export function generateZusDraKeduDraftXml(document) {
   const [year, month] = document.period.split("-");
   return [
     '<?xml version="1.0" encoding="utf-8"?>',
-    '<KEDU wersja_schematu="2.27" status="WERSJA_TECHNICZNA_DO_TESTOW_ZUS">',
+    '<PEWNIK_ZUS_DRA_DRAFT target_schema="KEDU-2.27" status="WERSJA_TECHNICZNA_DO_TESTOW_ZUS">',
     '  <deklaracja typ="ZUS_DRA">',
     xmlElement("identyfikator", `01${month}${year}`, "    "),
     xmlElement("nip", document.company.nip, "    "),
@@ -406,6 +410,6 @@ export function generateZusDraKeduDraftXml(document) {
     xmlElement("skladka_zdrowotna", pln(document.healthContributionGrosz), "    "),
     xmlElement("razem", pln(document.totalDueGrosz), "    "),
     "  </deklaracja>",
-    "</KEDU>",
+    "</PEWNIK_ZUS_DRA_DRAFT>",
   ].join("\n");
 }
