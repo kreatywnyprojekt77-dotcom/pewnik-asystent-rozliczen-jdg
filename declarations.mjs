@@ -195,6 +195,9 @@ function buildJpkDocument(company, profile, invoices, summary, period) {
     kind: "JPK_V7M",
     title: "JPK_V7M — ewidencja i deklaracja VAT",
     schemaVersion: DECLARATION_SCHEMA_VERSIONS.jpk,
+    officialSchemaUrl: "https://crd.gov.pl/wzor/2025/12/19/14090/schemat.xsd",
+    formVariant: 3,
+    vatFormVariant: 23,
     period,
     status: statusFor(findings, result.status),
     findings,
@@ -312,6 +315,9 @@ function sumVatRows(rows, key) {
 export function generateJpkV7mXml(document, generatedAt = new Date().toISOString()) {
   if (!isRecord(document) || document.kind !== "JPK_V7M") throw new TypeError("Nieprawidłowy dokument JPK_V7M.");
   if (document.status !== "READY") throw new Error("JPK_V7M nie jest jeszcze gotowy do eksportu XML. Sprawdź wszystkie ostrzeżenia.");
+  if (document.officialSchemaUrl !== "https://crd.gov.pl/wzor/2025/12/19/14090/schemat.xsd" || document.formVariant !== 3) {
+    throw new Error("Nieobsługiwana wersja schematu JPK_V7M.");
+  }
   const [year, month] = document.period.split("-");
   const salesNetByCode = Object.fromEntries(Object.keys(JPK_SALES_FIELDS).map((code) => [code, 0]));
   const salesVatByCode = Object.fromEntries(Object.keys(JPK_SALES_FIELDS).map((code) => [code, 0]));

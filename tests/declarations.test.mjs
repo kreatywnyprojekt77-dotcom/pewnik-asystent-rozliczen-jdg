@@ -55,6 +55,16 @@ test("JPK_V7M zawiera nagłówek, dane osoby i ewidencję", () => {
   assert.match(xml, /<K_20>230\.00<\/K_20>/);
   assert.match(xml, /<K_43>23\.00<\/K_43>/);
   assert.match(xml, /<P_51>207<\/P_51>/);
+  assert.equal(document.officialSchemaUrl, "https://crd.gov.pl/wzor/2025/12/19/14090/schemat.xsd");
+});
+
+test("JPK bezpiecznie koduje tekst pochodzący z faktury", () => {
+  const specialInvoices = structuredClone(invoices);
+  specialInvoices[0].contractor = "A & B <Usługi>";
+  const document = createDeclarationBundle({ company, declarationProfile, invoices: specialInvoices, summary, period: "2026-06" }).documents.jpk;
+  const xml = generateJpkV7mXml(document, "2026-07-01T12:00:00+02:00");
+  assert.match(xml, /A &amp; B &lt;Usługi&gt;/);
+  assert.doesNotMatch(xml, /A & B <Usługi>/);
 });
 
 test("blokuje JPK przy brakujących danych identyfikacyjnych", () => {
