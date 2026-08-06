@@ -73,12 +73,18 @@ const runtimeFiles = [
   'zus-rules.mjs',
   'zus-calculator.mjs',
   'zus-adapter.mjs',
-  'monthly-summary.mjs'
+  'monthly-summary.mjs',
+  'declarations.mjs'
 ];
 
 await Promise.all(runtimeFiles.map(file =>
   copyFile(resolve(root, file), resolve(output, file))
 ));
+
+await Promise.all([
+  copyFile(resolve(root, 'node_modules', 'pdfmake', 'build', 'pdfmake.min.js'), resolve(output, 'pdfmake.min.js')),
+  copyFile(resolve(root, 'node_modules', 'pdfmake', 'build', 'vfs_fonts.js'), resolve(output, 'vfs_fonts.js'))
+]);
 
 const publicConfig = `window.PEWNIK_SUPABASE_CONFIG = ${JSON.stringify({
   url: supabaseUrl,

@@ -162,6 +162,7 @@
       number: row.number,
       date: row.issue_date,
       contractor: row.contractor,
+      contractorNip: row.contractor_nip || (row.invoice_type === 'sale' ? row.buyer_nip : row.seller_nip),
       type: row.invoice_type,
       net: Number(row.net_amount),
       vatRate: Number(row.vat_rate),
@@ -191,6 +192,7 @@
       number: invoice.number,
       issue_date: invoice.date,
       contractor: invoice.contractor,
+      contractor_nip: invoice.contractorNip || null,
       invoice_type: invoice.type,
       net_amount: Number(invoice.net),
       vat_rate: Number(invoice.vatRate),
@@ -308,6 +310,15 @@
     const { error } = await client
       .from('invoices')
       .update({ vat_deduction_percent: percent, deductible_vat_amount: null, updated_at: new Date().toISOString() })
+      .eq('id', invoiceId);
+    if (error) throw error;
+  }
+
+  async function updateInvoiceContractorNip(invoiceId, contractorNip) {
+    if (!currentUser) return;
+    const { error } = await client
+      .from('invoices')
+      .update({ contractor_nip: contractorNip, updated_at: new Date().toISOString() })
       .eq('id', invoiceId);
     if (error) throw error;
   }
@@ -434,6 +445,7 @@
     createInvoice,
     updateInvoiceCategory,
     updateInvoiceVatDeduction,
+    updateInvoiceContractorNip,
     deleteInvoice,
     getKsefConnection,
     testKsefConnection,

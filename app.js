@@ -1,5 +1,6 @@
 import { generateMonthlySummary } from './monthly-summary.mjs';
 import { prepareInvoice } from './invoice-input.mjs';
+import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml } from './declarations.mjs';
 
 (function () {
   'use strict';
@@ -37,12 +38,12 @@ import { prepareInvoice } from './invoice-input.mjs';
   };
 
   const defaultInvoices = [
-    { id: 1, number: 'FV/06/2026/01', date: '2026-06-03', supplyDate: '2026-06-03', taxPointDate: '2026-06-03', contractor: 'DEMO — Northbyte Sp. z o.o.', type: 'sale', documentType: 'invoice', net: 12000, vatRate: 23, vatCode: '23', category: 'software' },
-    { id: 2, number: 'FV/06/2026/02', date: '2026-06-10', supplyDate: '2026-06-10', taxPointDate: '2026-06-10', contractor: 'DEMO — Orbit Systems S.A.', type: 'sale', documentType: 'invoice', net: 6800, vatRate: 23, vatCode: '23', category: 'software' },
-    { id: 3, number: 'FV/06/2026/03', date: '2026-06-18', supplyDate: '2026-06-18', taxPointDate: '2026-06-18', contractor: 'DEMO — Metrum Digital Sp. z o.o.', type: 'sale', documentType: 'invoice', net: 5500, vatRate: 23, vatCode: '23', category: 'consulting' },
-    { id: 4, number: 'FV/06/2026/04', date: '2026-06-26', supplyDate: '2026-06-26', taxPointDate: '2026-06-26', contractor: 'DEMO — BluePeak Polska Sp. z o.o.', type: 'sale', documentType: 'invoice', net: 4500, vatRate: 23, vatCode: '23', category: 'software' },
-    { id: 5, number: 'K/0626/184', date: '2026-06-12', receivedDate: '2026-06-12', contractor: 'DEMO — Cloud Hosting Polska', type: 'cost', documentType: 'invoice', net: 1800, vatRate: 23, vatCode: '23', vatDeductionPercent: 100, category: null },
-    { id: 6, number: 'FVK/1220/06', date: '2026-06-21', receivedDate: '2026-06-21', contractor: 'DEMO — Biuro i Sprzęt Sp. z o.o.', type: 'cost', documentType: 'invoice', net: 800, vatRate: 23, vatCode: '23', vatDeductionPercent: 100, category: null }
+    { id: 1, number: 'FV/06/2026/01', date: '2026-06-03', supplyDate: '2026-06-03', taxPointDate: '2026-06-03', contractor: 'DEMO — Northbyte Sp. z o.o.', contractorNip: '5210000001', type: 'sale', documentType: 'invoice', net: 12000, vatRate: 23, vatCode: '23', category: 'software' },
+    { id: 2, number: 'FV/06/2026/02', date: '2026-06-10', supplyDate: '2026-06-10', taxPointDate: '2026-06-10', contractor: 'DEMO — Orbit Systems S.A.', contractorNip: '5210000002', type: 'sale', documentType: 'invoice', net: 6800, vatRate: 23, vatCode: '23', category: 'software' },
+    { id: 3, number: 'FV/06/2026/03', date: '2026-06-18', supplyDate: '2026-06-18', taxPointDate: '2026-06-18', contractor: 'DEMO — Metrum Digital Sp. z o.o.', contractorNip: '5210000003', type: 'sale', documentType: 'invoice', net: 5500, vatRate: 23, vatCode: '23', category: 'consulting' },
+    { id: 4, number: 'FV/06/2026/04', date: '2026-06-26', supplyDate: '2026-06-26', taxPointDate: '2026-06-26', contractor: 'DEMO — BluePeak Polska Sp. z o.o.', contractorNip: '5210000004', type: 'sale', documentType: 'invoice', net: 4500, vatRate: 23, vatCode: '23', category: 'software' },
+    { id: 5, number: 'K/0626/184', date: '2026-06-12', receivedDate: '2026-06-12', contractor: 'DEMO — Cloud Hosting Polska', contractorNip: '5210000005', type: 'cost', documentType: 'invoice', net: 1800, vatRate: 23, vatCode: '23', vatDeductionPercent: 100, category: null },
+    { id: 6, number: 'FVK/1220/06', date: '2026-06-21', receivedDate: '2026-06-21', contractor: 'DEMO — Biuro i Sprzęt Sp. z o.o.', contractorNip: '5210000006', type: 'cost', documentType: 'invoice', net: 800, vatRate: 23, vatCode: '23', vatDeductionPercent: 100, category: null }
   ];
 
   const initialState = {
@@ -54,7 +55,11 @@ import { prepareInvoice } from './invoice-input.mjs';
     vatSettings: { byPeriod: {} },
     zusSettings: { sicknessInsurance: true, byPeriod: {} },
     tasks: { transfers: false, jpk: false, archive: false },
-    company: { name: 'DEMO — Studio Testowe (dane syntetyczne)', nip: '0000000000' }
+    company: { name: 'DEMO — Studio Testowe (dane syntetyczne)', nip: '0000000000' },
+    declarationProfile: {
+      firstName: '', lastName: '', birthDate: '', pesel: '', regon: '',
+      taxOfficeCode: '', email: '', phone: '', zusInsuranceTitleCode: '051000'
+    }
   };
 
   const loaded = loadState();
@@ -67,10 +72,12 @@ import { prepareInvoice } from './invoice-input.mjs';
     vatSettings: Object.assign({}, initialState.vatSettings, loaded.vatSettings || {}),
     zusSettings: Object.assign({}, initialState.zusSettings, loaded.zusSettings || {}),
     tasks: Object.assign({}, initialState.tasks, loaded.tasks || {}),
-    company: Object.assign({}, initialState.company, loaded.company || {})
+    company: Object.assign({}, initialState.company, loaded.company || {}),
+    declarationProfile: Object.assign({}, initialState.declarationProfile, loaded.declarationProfile || {})
   };
 
   let toastTimer;
+  let currentDeclarationKind = 'jpk';
 
   function loadState() {
     try {
@@ -119,6 +126,7 @@ import { prepareInvoice } from './invoice-input.mjs';
     state.zusSettings = Object.assign({}, initialState.zusSettings, nextState.zusSettings || {});
     state.tasks = Object.assign({}, initialState.tasks, nextState.tasks || {});
     state.company = Object.assign({}, initialState.company, nextState.company || {});
+    state.declarationProfile = Object.assign({}, initialState.declarationProfile, nextState.declarationProfile || {});
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch (_) {
@@ -128,6 +136,7 @@ import { prepareInvoice } from './invoice-input.mjs';
     fillRuleForm();
     fillVerificationForm();
     renderCompany();
+    fillDeclarationProfile();
     renderTasks();
     renderCalculations();
   }
@@ -254,6 +263,190 @@ import { prepareInvoice } from './invoice-input.mjs';
     });
   }
 
+  function declarationBundle() {
+    return createDeclarationBundle({
+      company: state.company,
+      declarationProfile: state.declarationProfile,
+      invoices: state.invoices,
+      summary: calculations(),
+      period: state.period.slice(0, 7)
+    });
+  }
+
+  function declarationStatusCopy(status) {
+    if (status === 'READY') return { label: 'Gotowy do pobrania', className: 'success' };
+    if (status === 'REVIEW_REQUIRED') return { label: 'Wymaga sprawdzenia', className: 'warning' };
+    return { label: 'Brak wymaganych danych', className: 'error' };
+  }
+
+  function fillDeclarationProfile() {
+    Object.entries(state.declarationProfile).forEach(([key, value]) => setTextInput('declarationProfile' + key.charAt(0).toUpperCase() + key.slice(1), value));
+  }
+
+  function saveDeclarationProfile() {
+    const value = key => document.getElementById('declarationProfile' + key.charAt(0).toUpperCase() + key.slice(1)).value.trim();
+    state.declarationProfile = {
+      firstName: value('firstName'),
+      lastName: value('lastName'),
+      birthDate: value('birthDate'),
+      pesel: value('pesel').replace(/\D/g, ''),
+      regon: value('regon').replace(/\D/g, ''),
+      taxOfficeCode: value('taxOfficeCode').replace(/\D/g, ''),
+      email: value('email'),
+      phone: value('phone').replace(/[^\d+]/g, ''),
+      zusInsuranceTitleCode: value('zusInsuranceTitleCode').replace(/\D/g, '')
+    };
+  }
+
+  function declarationFindingsHtml(documentData) {
+    if (!documentData.findings.length) return '<div class="declaration-ready-note">Wszystkie wymagane dane są kompletne.</div>';
+    return '<ul class="declaration-findings">' + documentData.findings.slice(0, 4).map(item =>
+      '<li class="' + escapeHtml(item.severity) + '">' + escapeHtml(item.message) + '</li>'
+    ).join('') + (documentData.findings.length > 4 ? '<li>oraz ' + (documentData.findings.length - 4) + ' kolejnych uwag</li>' : '') + '</ul>';
+  }
+
+  function renderDeclarations() {
+    const bundle = declarationBundle();
+    const amounts = {
+      ryczalt: bundle.documents.ryczalt.amountDueGrosz,
+      jpk: bundle.documents.jpk.taxDueGrosz,
+      zus: bundle.documents.zus.totalDueGrosz
+    };
+    Object.entries(bundle.documents).forEach(([kind, documentData]) => {
+      const status = declarationStatusCopy(documentData.status);
+      const badge = document.getElementById('declarationStatus-' + kind);
+      if (badge) {
+        badge.textContent = status.label;
+        badge.className = 'status-pill ' + status.className;
+      }
+      setText('declarationAmount-' + kind, Number.isSafeInteger(amounts[kind]) ? money(amounts[kind] / 100) : '—');
+      const findings = document.getElementById('declarationFindings-' + kind);
+      if (findings) findings.innerHTML = declarationFindingsHtml(documentData);
+      document.querySelectorAll('[data-declaration-xml="' + kind + '"]').forEach(button => {
+        button.disabled = kind === 'jpk' ? documentData.status !== 'READY' : documentData.status === 'BLOCKED';
+      });
+    });
+  }
+
+  function downloadTextFile(content, fileName, type) {
+    const blob = new Blob([content], { type });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  function documentPdfDefinition(kind, documentData) {
+    const heading = [
+      { text: 'PEWNIK', color: '#2457d6', bold: true, fontSize: 10 },
+      { text: documentData.title, bold: true, fontSize: 18, margin: [0, 7, 0, 3] },
+      { text: 'Okres: ' + documentData.period + '  •  Wersja: ' + documentData.schemaVersion, color: '#657084', fontSize: 9, margin: [0, 0, 0, 18] }
+    ];
+    const identity = {
+      table: {
+        widths: ['35%', '*'],
+        body: [
+          ['Podmiot', state.company.name],
+          ['NIP', state.company.nip],
+          ['Status', declarationStatusCopy(documentData.status).label]
+        ]
+      },
+      layout: 'lightHorizontalLines',
+      margin: [0, 0, 0, 18]
+    };
+    let details = [];
+    if (kind === 'ryczalt') {
+      details = [
+        { text: 'Ryczałt do wpłaty', style: 'section' },
+        { text: money((documentData.amountDueGrosz || 0) / 100), bold: true, fontSize: 20, margin: [0, 4, 0, 12] },
+        { text: 'To miesięczna karta rozliczenia. PIT-28 jest zeznaniem rocznym.', color: '#657084', fontSize: 9 }
+      ];
+    } else if (kind === 'jpk') {
+      details = [
+        { text: 'Podsumowanie VAT', style: 'section' },
+        { table: { widths: ['*', 'auto'], body: [
+          ['Liczba dokumentów sprzedaży', documentData.salesRows.length],
+          ['Liczba dokumentów zakupu', documentData.purchaseRows.length],
+          ['VAT należny', money((documentData.outputVatGrosz || 0) / 100)],
+          ['VAT do odliczenia', money((documentData.deductibleInputVatGrosz || 0) / 100)],
+          ['VAT do zapłaty', money((documentData.taxDueGrosz || 0) / 100)]
+        ] }, layout: 'lightHorizontalLines' }
+      ];
+    } else {
+      details = [
+        { text: 'Podsumowanie ZUS DRA', style: 'section' },
+        { table: { widths: ['*', 'auto'], body: [
+          ['Podstawa składek społecznych', money((documentData.socialBaseGrosz || 0) / 100)],
+          ['Składki społeczne', money((documentData.socialInsuranceDueGrosz || 0) / 100)],
+          ['Fundusz Pracy i FS', money((documentData.labourFundsDueGrosz || 0) / 100)],
+          ['Składka zdrowotna', money((documentData.healthContributionGrosz || 0) / 100)],
+          ['Razem', money((documentData.totalDueGrosz || 0) / 100)]
+        ] }, layout: 'lightHorizontalLines' }
+      ];
+    }
+    const findings = documentData.findings.length ? [
+      { text: 'Uwagi i walidacja', style: 'section', margin: [0, 18, 0, 6] },
+      { ul: documentData.findings.map(item => item.message), color: '#7a4d18', fontSize: 9 }
+    ] : [];
+    return {
+      pageSize: 'A4',
+      pageMargins: [45, 45, 45, 45],
+      content: [...heading, identity, ...details, ...findings, { text: 'Wersja robocza do sprawdzenia. Plikiem do elektronicznego przekazania jest właściwy XML.', color: '#8992a0', fontSize: 8, margin: [0, 28, 0, 0] }],
+      styles: { section: { bold: true, fontSize: 11, color: '#172033' } },
+      defaultStyle: { font: 'Roboto', color: '#172033', fontSize: 10 }
+    };
+  }
+
+  function downloadDeclarationPdf(kind) {
+    const documentData = declarationBundle().documents[kind];
+    if (!window.pdfMake) {
+      showToast('Generator PDF nie został załadowany. Odśwież aplikację i spróbuj ponownie.', 'error');
+      return;
+    }
+    window.pdfMake.createPdf(documentPdfDefinition(kind, documentData)).download(documentData.kind + '_' + documentData.period + '_PODGLAD.pdf');
+    showToast('Przygotowano podgląd PDF.');
+  }
+
+  function downloadDeclarationXml(kind) {
+    const documentData = declarationBundle().documents[kind];
+    try {
+      if (kind === 'jpk') {
+        downloadTextFile(generateJpkV7mXml(documentData), 'JPK_V7M_' + documentData.period + '.xml', 'application/xml;charset=utf-8');
+        showToast('Pobrano plik JPK_V7M XML.');
+      } else if (kind === 'zus') {
+        downloadTextFile(generateZusDraKeduDraftXml(documentData), 'ZUS_DRA_' + documentData.period + '_WERSJA_TECHNICZNA.xml', 'application/xml;charset=utf-8');
+        showToast('Pobrano techniczną wersję XML ZUS DRA.', 'info');
+      }
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
+  }
+
+  function declarationPreviewHtml(kind, documentData) {
+    const amount = kind === 'ryczalt' ? documentData.amountDueGrosz : (kind === 'jpk' ? documentData.taxDueGrosz : documentData.totalDueGrosz);
+    const status = declarationStatusCopy(documentData.status);
+    const rows = kind === 'jpk'
+      ? '<div class="document-grid"><div><span>Sprzedaż</span><strong>' + documentData.salesRows.length + ' pozycji</strong></div><div><span>Zakupy</span><strong>' + documentData.purchaseRows.length + ' pozycji</strong></div></div>'
+      : (kind === 'zus'
+        ? '<div class="document-grid"><div><span>Składki społeczne</span><strong>' + money((documentData.socialInsuranceDueGrosz || 0) / 100) + '</strong></div><div><span>Składka zdrowotna</span><strong>' + money((documentData.healthContributionGrosz || 0) / 100) + '</strong></div></div>'
+        : '<div class="document-grid"><div><span>Wersja reguł</span><strong>' + escapeHtml(documentData.ruleVersion || '—') + '</strong></div><div><span>Charakter dokumentu</span><strong>Karta miesięczna</strong></div></div>');
+    return '<div class="document-preview"><div class="document-top"><div class="document-logo">' + (kind === 'jpk' ? 'MF' : (kind === 'zus' ? 'ZUS' : '%')) + '</div><div><span>' + escapeHtml(documentData.schemaVersion) + '</span><strong>' + escapeHtml(documentData.title) + '</strong></div><span class="draft-stamp">PODGLĄD</span></div>' +
+      '<div class="document-grid"><div><span>Podmiot</span><strong>' + escapeHtml(state.company.name) + '</strong></div><div><span>NIP</span><strong>' + escapeHtml(state.company.nip) + '</strong></div><div><span>Okres</span><strong>' + escapeHtml(documentData.period) + '</strong></div><div><span>Kwota</span><strong>' + (Number.isSafeInteger(amount) ? money(amount / 100) : '—') + '</strong></div></div>' + rows +
+      '<div class="document-summary"><span>Status dokumentu</span><strong>' + escapeHtml(status.label) + '</strong></div>' + declarationFindingsHtml(documentData) + '</div>';
+  }
+
+  function openDeclarationPreview(kind) {
+    currentDeclarationKind = kind;
+    const documentData = declarationBundle().documents[kind];
+    setText('declarationTitle', documentData.title);
+    document.getElementById('declarationPreviewContent').innerHTML = declarationPreviewHtml(kind, documentData);
+    document.getElementById('downloadDeclarationXml').hidden = kind === 'ryczalt';
+    document.getElementById('downloadDeclarationXml').disabled = kind === 'jpk' ? documentData.status !== 'READY' : documentData.status === 'BLOCKED';
+    document.getElementById('downloadDeclarationXml').textContent = kind === 'zus' ? 'Pobierz techniczny XML' : 'Pobierz XML';
+    openModal('declarationModal');
+  }
+
   function invoiceVat(invoice) {
     if (invoice.vatAmount != null && Number.isFinite(Number(invoice.vatAmount))) {
       return Number(invoice.vatAmount);
@@ -332,7 +525,6 @@ import { prepareInvoice } from './invoice-input.mjs';
     overallStatus.textContent = invalidOverall ? 'Błąd' : (reviewOverall ? 'Do weryfikacji' : 'Gotowe');
     overallStatus.className = 'status-pill ' + (invalidOverall ? 'error' : (reviewOverall ? 'warning' : 'success'));
     document.querySelector('.ready-banner').classList.toggle('warning', invalidOverall || reviewOverall);
-    document.getElementById('downloadDraft').disabled = invalidVat;
     document.querySelector('[data-task="transfers"]').disabled = !calc.payment.canCreateTransfers;
     document.querySelector('[data-task="jpk"]').disabled = invalidVat;
 
@@ -374,6 +566,7 @@ import { prepareInvoice } from './invoice-input.mjs';
 
     renderInvoices();
     renderVerification(calc);
+    renderDeclarations();
   }
 
   function findingSummary(findings, area) {
@@ -500,7 +693,7 @@ import { prepareInvoice } from './invoice-input.mjs';
         : '<button class="icon-button delete-invoice" data-delete-invoice="' + invoice.id + '" aria-label="Usuń fakturę">×</button>';
       return '<tr>' +
         '<td class="document-cell"><strong>' + escapeHtml(invoice.number) + origin + '</strong><small>' + date + '</small>' + ksefNumber + '</td>' +
-        '<td>' + escapeHtml(invoice.contractor) + '</td>' +
+        '<td class="contractor-cell"><strong>' + escapeHtml(invoice.contractor) + '</strong><label class="nip-inline">NIP <input value="' + escapeHtml(invoice.contractorNip || '') + '" data-contractor-nip-invoice="' + invoice.id + '" inputmode="numeric" maxlength="10" placeholder="uzupełnij"></label></td>' +
         '<td><span class="type-badge ' + (invoice.type === 'cost' ? 'cost' : '') + '">' + (invoice.type === 'sale' ? 'Sprzedaż' : 'Koszt') + '</span></td>' +
         '<td><strong>' + money(invoice.net, currency) + '</strong></td>' +
         '<td>' + money(vat, vatCurrency) + '</td>' +
@@ -846,6 +1039,7 @@ import { prepareInvoice } from './invoice-input.mjs';
       number: String(data.get('number')).trim(),
       date: String(data.get('date')),
       contractor: String(data.get('contractor')).trim(),
+      contractorNip: String(data.get('contractorNip')).replace(/\D/g, ''),
       type,
       net: data.get('net'),
       vatCode,
@@ -880,6 +1074,29 @@ import { prepareInvoice } from './invoice-input.mjs';
   });
 
   document.getElementById('invoiceTableBody').addEventListener('change', async event => {
+    const nipInput = event.target.closest('[data-contractor-nip-invoice]');
+    if (nipInput) {
+      const invoice = state.invoices.find(item => String(item.id) === nipInput.dataset.contractorNipInvoice);
+      if (!invoice) return;
+      const previousNip = invoice.contractorNip || '';
+      const contractorNip = nipInput.value.replace(/\D/g, '');
+      if (contractorNip.length !== 10) {
+        nipInput.value = previousNip;
+        showToast('NIP kontrahenta musi mieć 10 cyfr.', 'error');
+        return;
+      }
+      try {
+        if (window.PewnikCloud) await window.PewnikCloud.updateInvoiceContractorNip(invoice.id, contractorNip);
+        invoice.contractorNip = contractorNip;
+        persist();
+        renderCalculations();
+        showToast('Zapisano NIP kontrahenta.');
+      } catch (error) {
+        nipInput.value = previousNip;
+        showToast('Nie udało się zapisać NIP-u: ' + error.message, 'error');
+      }
+      return;
+    }
     const select = event.target.closest('[data-rate-invoice]');
     if (select) {
       const invoice = state.invoices.find(item => String(item.id) === select.dataset.rateInvoice);
@@ -987,6 +1204,13 @@ import { prepareInvoice } from './invoice-input.mjs';
     showToast('Ustawienia działalności zostały zapisane.');
   });
 
+  document.getElementById('saveDeclarationProfile').addEventListener('click', () => {
+    saveDeclarationProfile();
+    persist();
+    renderDeclarations();
+    showToast('Profil deklaracyjny został zapisany.');
+  });
+
   document.getElementById('testKsefConnection').addEventListener('click', () => runKsefAction('status'));
   document.getElementById('syncKsefInvoices').addEventListener('click', () => runKsefAction('sync'));
   window.addEventListener('pewnik:cloud-session', refreshKsefPanel);
@@ -1005,47 +1229,27 @@ import { prepareInvoice } from './invoice-input.mjs';
     button.addEventListener('click', event => {
       event.preventDefault();
       event.stopPropagation();
-      openModal('declarationModal');
+      openDeclarationPreview(button.dataset.type === 'JPK_V7M' ? 'jpk' : (button.dataset.declarationPreview || 'jpk'));
     });
   });
 
-  document.getElementById('downloadDraft').addEventListener('click', () => {
-    const calc = calculations();
-    const vatResult = calc.components.vat.result;
-    if (vatResult.status === 'INVALID') {
-      showToast('Nie można przygotować JPK przy błędnym wyniku VAT.', 'error');
-      return;
-    }
-    const content = [
-      'PEWNIK — WERSJA ROBOCZA DOKUMENTU',
-      'JPK_V7M — podgląd danych',
-      '',
-      'Podmiot: ' + state.company.name,
-      'NIP: ' + state.company.nip,
-      'Okres: ' + periodName(),
-      'Liczba dokumentów: ' + state.invoices.length,
-      'VAT należny: ' + money((calc.metrics.outputVatGrosz || 0) / 100),
-      'VAT naliczony: ' + money((calc.metrics.inputVatGrosz || 0) / 100),
-      'VAT podlegający odliczeniu: ' + money((calc.metrics.deductibleInputVatGrosz || 0) / 100),
-      'VAT do zapłaty: ' + money((calc.components.vat.dueGrosz || 0) / 100),
-      'Nadwyżka do przeniesienia: ' + money((vatResult.carryForwardGrosz || 0) / 100),
-      'Status kalkulatora VAT: ' + vatResult.status,
-      '',
-      'To plik demonstracyjny, nie jest deklaracją gotową do wysyłki.'
-    ].join('\r\n');
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'JPK_V7M_' + state.period.slice(0, 7) + '_WERSJA_ROBOCZA.txt';
-    link.click();
-    URL.revokeObjectURL(link.href);
-    showToast('Pobrano wersję roboczą dokumentu.');
+  document.querySelectorAll('[data-declaration-preview]').forEach(button => {
+    button.addEventListener('click', () => openDeclarationPreview(button.dataset.declarationPreview));
   });
+  document.querySelectorAll('[data-declaration-pdf]').forEach(button => {
+    button.addEventListener('click', () => downloadDeclarationPdf(button.dataset.declarationPdf));
+  });
+  document.querySelectorAll('[data-declaration-xml]').forEach(button => {
+    button.addEventListener('click', () => downloadDeclarationXml(button.dataset.declarationXml));
+  });
+  document.getElementById('downloadDeclarationPdf').addEventListener('click', () => downloadDeclarationPdf(currentDeclarationKind));
+  document.getElementById('downloadDeclarationXml').addEventListener('click', () => downloadDeclarationXml(currentDeclarationKind));
 
   updatePeriod();
   fillRuleForm();
   fillVerificationForm();
   renderCompany();
+  fillDeclarationProfile();
   renderTasks();
   renderCalculations();
   refreshKsefPanel();
