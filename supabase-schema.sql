@@ -89,6 +89,7 @@ alter table public.invoices add column if not exists accounting_period text;
 alter table public.invoices add column if not exists vat_deduction_percent integer;
 alter table public.invoices add column if not exists deductible_vat_amount numeric(14, 2);
 alter table public.invoices add column if not exists vat_lines jsonb;
+alter table public.invoices add column if not exists contractor_nip text;
 
 do $$
 begin

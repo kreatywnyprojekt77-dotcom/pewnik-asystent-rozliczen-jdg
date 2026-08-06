@@ -32,6 +32,10 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18H5V3Zm4 5h6M9 12h6M9 16h4"/></svg>
           Rozliczenia
         </button>
+        <button class="nav-item" data-view="declarations">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6V2Zm8 2v4h4M9 12h8M9 16h8"/></svg>
+          Deklaracje
+        </button>
         <button class="nav-item" data-view="rules">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7l8-4Zm-3 9 2 2 4-4"/></svg>
           Reguły i stawki
@@ -258,6 +262,56 @@
         </article>
       </section>
 
+      <section class="view" id="declarationsView">
+        <div class="page-heading">
+          <div><p class="eyebrow">Dokumenty za wybrany okres</p><h1>Deklaracje i rozliczenia</h1><p>Sprawdź dane, obejrzyj dokument i pobierz PDF lub właściwy plik XML.</p></div>
+          <span class="version-tag">JPK_V7M(3) · ZUS 2.27</span>
+        </div>
+
+        <article class="card declaration-profile-card">
+          <div class="section-heading"><div><p class="eyebrow">Uzupełnij jeden raz</p><h2>Profil deklaracyjny właścicielki</h2></div><span>Dane zapisywane razem z profilem firmy</span></div>
+          <p class="declaration-profile-intro">Aplikacja użyje tych danych w JPK_V7M i podglądzie ZUS DRA. Nie zapisujemy profilu zaufanego, certyfikatu ani danych logowania do urzędu.</p>
+          <div class="declaration-profile-grid">
+            <label>Imię<input id="declarationProfileFirstName" autocomplete="given-name"></label>
+            <label>Nazwisko<input id="declarationProfileLastName" autocomplete="family-name"></label>
+            <label>Data urodzenia<input id="declarationProfileBirthDate" type="date"></label>
+            <label>PESEL<input id="declarationProfilePesel" inputmode="numeric" maxlength="11"></label>
+            <label>REGON<input id="declarationProfileRegon" inputmode="numeric" maxlength="9"></label>
+            <label>Kod urzędu skarbowego<input id="declarationProfileTaxOfficeCode" inputmode="numeric" maxlength="4" placeholder="np. 1215"></label>
+            <label>E-mail<input id="declarationProfileEmail" type="email" autocomplete="email"></label>
+            <label>Telefon<input id="declarationProfilePhone" type="tel" autocomplete="tel"></label>
+            <label>Kod tytułu ubezpieczenia ZUS<input id="declarationProfileZusInsuranceTitleCode" inputmode="numeric" maxlength="6" placeholder="np. 051000"></label>
+          </div>
+          <div class="declaration-profile-actions"><button type="button" class="primary-button" id="saveDeclarationProfile">Zapisz profil deklaracyjny</button></div>
+        </article>
+
+        <div class="declaration-cards">
+          <article class="card declaration-card">
+            <div class="declaration-card-top"><span class="declaration-mark blue">%</span><div><span>Rozliczenie miesięczne</span><h2>Ryczałt</h2></div><span class="status-pill warning" id="declarationStatus-ryczalt">Sprawdzanie…</span></div>
+            <strong class="declaration-amount" id="declarationAmount-ryczalt">—</strong>
+            <p>Karta miesięcznego obliczenia i dane do wpłaty. PIT-28 pozostaje zeznaniem rocznym.</p>
+            <div id="declarationFindings-ryczalt"></div>
+            <div class="declaration-actions"><button type="button" class="secondary-button" data-declaration-preview="ryczalt">Podgląd</button><button type="button" class="primary-button" data-declaration-pdf="ryczalt">Pobierz PDF</button></div>
+          </article>
+
+          <article class="card declaration-card">
+            <div class="declaration-card-top"><span class="declaration-mark cyan">VAT</span><div><span>Struktura obowiązująca od 1.02.2026</span><h2>JPK_V7M(3)</h2></div><span class="status-pill warning" id="declarationStatus-jpk">Sprawdzanie…</span></div>
+            <strong class="declaration-amount" id="declarationAmount-jpk">—</strong>
+            <p>Podgląd ewidencji i deklaracji VAT. XML jest przeznaczony do późniejszego przesłania przez narzędzie MF.</p>
+            <div id="declarationFindings-jpk"></div>
+            <div class="declaration-actions"><button type="button" class="secondary-button" data-declaration-preview="jpk">Podgląd</button><button type="button" class="secondary-button" data-declaration-pdf="jpk">Pobierz PDF</button><button type="button" class="primary-button" data-declaration-xml="jpk">Pobierz XML</button></div>
+          </article>
+
+          <article class="card declaration-card">
+            <div class="declaration-card-top"><span class="declaration-mark violet">ZUS</span><div><span>Deklaracja rozliczeniowa</span><h2>ZUS DRA</h2></div><span class="status-pill warning" id="declarationStatus-zus">Sprawdzanie…</span></div>
+            <strong class="declaration-amount" id="declarationAmount-zus">—</strong>
+            <p>Podgląd dla JDG bez pracowników. XML pozostaje wersją techniczną do czasu przejścia testów akceptacyjnych ZUS.</p>
+            <div id="declarationFindings-zus"></div>
+            <div class="declaration-actions"><button type="button" class="secondary-button" data-declaration-preview="zus">Podgląd</button><button type="button" class="secondary-button" data-declaration-pdf="zus">Pobierz PDF</button><button type="button" class="primary-button" data-declaration-xml="zus">Techniczny XML</button></div>
+          </article>
+        </div>
+      </section>
+
       <section class="view" id="rulesView">
         <div class="page-heading"><div><p class="eyebrow">Silnik obliczeniowy</p><h1>Reguły i stawki</h1><p>Wartości używane w tym prototypie. Zmiana stawki natychmiast przeliczy podsumowanie.</p></div><button class="secondary-button" id="restoreRules">Przywróć wartości demo</button></div>
         <div class="rule-layout">
@@ -336,7 +390,8 @@
           <label>Data wystawienia<input name="date" type="date" required></label>
           <label>Rodzaj dokumentu<select name="documentType"><option value="invoice">Faktura</option><option value="correction">Faktura korygująca</option></select></label>
           <label><span id="vatEffectiveDateText">Data sprzedaży / wykonania usługi</span><input name="vatEffectiveDate" type="date" required></label>
-          <label class="span-2">Kontrahent<input name="contractor" required placeholder="Nazwa firmy"></label>
+          <label>Kontrahent<input name="contractor" required placeholder="Nazwa firmy"></label>
+          <label>NIP kontrahenta<input name="contractorNip" inputmode="numeric" maxlength="10" required placeholder="10 cyfr"></label>
           <label>Kwota netto<input name="net" type="number" step="0.01" required placeholder="0,00"></label>
           <label>Stawka / kod VAT<select name="vat"><option value="23">23%</option><option value="8">8%</option><option value="5">5%</option><option value="0">0%</option><option value="ZW">ZW</option><option value="NP">NP</option></select></label>
           <label class="span-2 vat-deduction-field" style="display:none">VAT podlegający odliczeniu<select name="vatDeductionPercent"><option value="100">100% — pełne odliczenie</option><option value="50">50% — częściowe odliczenie</option><option value="0">0% — bez odliczenia</option></select></label>
@@ -349,13 +404,9 @@
 
   <div class="modal-backdrop" id="declarationModal" aria-hidden="true">
     <div class="modal declaration-modal" role="dialog" aria-modal="true" aria-labelledby="declarationTitle">
-      <div class="modal-header"><div><p class="eyebrow">Wersja robocza</p><h2 id="declarationTitle">Podgląd JPK_V7M</h2></div><button class="icon-button declaration-close" aria-label="Zamknij">×</button></div>
-      <div class="document-preview">
-        <div class="document-top"><div class="document-logo">MF</div><div><span>JPK_V7M</span><strong>Ewidencja i deklaracja VAT</strong></div><span class="draft-stamp">WERSJA ROBOCZA</span></div>
-        <div class="document-grid"><div><span>Podmiot</span><strong id="documentCompany">DEMO — Studio Testowe (dane syntetyczne)</strong></div><div><span>NIP</span><strong id="documentNip">0000000000</strong></div><div><span>Okres</span><strong id="documentPeriod">06 / 2026</strong></div><div><span>VAT do zapłaty</span><strong id="documentVat">2 060,00 zł</strong></div></div>
-        <div class="document-summary"><span>Dokument zawiera</span><strong id="documentInvoiceCount">6 pozycji ewidencji</strong></div>
-      </div>
-      <div class="modal-actions"><button type="button" class="secondary-button declaration-close">Zamknij</button><button type="button" class="primary-button" id="downloadDraft"><svg viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 20h14"/></svg>Pobierz wersję roboczą</button></div>
+      <div class="modal-header"><div><p class="eyebrow">Podgląd dokumentu</p><h2 id="declarationTitle">Deklaracja</h2></div><button class="icon-button declaration-close" aria-label="Zamknij">×</button></div>
+      <div id="declarationPreviewContent"></div>
+      <div class="modal-actions"><button type="button" class="secondary-button declaration-close">Zamknij</button><button type="button" class="secondary-button" id="downloadDeclarationPdf">Pobierz PDF</button><button type="button" class="primary-button" id="downloadDeclarationXml">Pobierz XML</button></div>
     </div>
   </div>
 
@@ -380,6 +431,8 @@
   <div class="toast" id="toast"><span class="toast-icon">✓</span><span id="toastText">Zapisano</span></div>
   <script src="supabase-config.js"></script>
   <script src="supabase-sync.js"></script>
+  <script src="pdfmake.min.js"></script>
+  <script src="vfs_fonts.js"></script>
   <script type="module" src="app.js"></script>
   <script>
     window.setTimeout(function () {
