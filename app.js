@@ -357,9 +357,20 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     };
     let details = [];
     if (kind === 'ryczalt') {
+      const rateRows = documentData.rows.length
+        ? [{
+            table: {
+              widths: ['*', 'auto', 'auto'],
+              body: [['Stawka', 'Podstawa przed zaokrągleniem', 'Podstawa w pełnych zł'], ...documentData.rows.map(row => [row.label, money(row.baseGrosz / 100), money(row.roundedBasePln)])]
+            },
+            layout: 'lightHorizontalLines',
+            margin: [0, 0, 0, 12]
+          }]
+        : [];
       details = [
         { text: 'Ryczałt do wpłaty', style: 'section' },
         { text: money((documentData.amountDueGrosz || 0) / 100), bold: true, fontSize: 20, margin: [0, 4, 0, 12] },
+        ...rateRows,
         { text: 'To miesięczna karta rozliczenia. PIT-28 jest zeznaniem rocznym.', color: '#657084', fontSize: 9 }
       ];
     } else if (kind === 'jpk') {

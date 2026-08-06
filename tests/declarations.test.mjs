@@ -38,6 +38,14 @@ test("tworzy gotowy dokument JPK i techniczny dokument ZUS", () => {
   assert.deepEqual(bundle.audit.invoiceIds, ["k1", "s1"]);
 });
 
+test("ryczałt jest miesięczną kartą rozliczenia, a nie deklaracją PIT-28", () => {
+  const document = createDeclarationBundle({ company, declarationProfile, invoices, summary, period: "2026-06" }).documents.ryczalt;
+  assert.equal(document.kind, "RYCZALT");
+  assert.equal(document.title, "Miesięczne rozliczenie ryczałtu");
+  assert.equal(document.amountDueGrosz, 12000);
+  assert.equal(Object.hasOwn(document, "xml"), false);
+});
+
 test("JPK_V7M zawiera nagłówek, dane osoby i ewidencję", () => {
   const document = createDeclarationBundle({ company, declarationProfile, invoices, summary, period: "2026-06" }).documents.jpk;
   const xml = generateJpkV7mXml(document, "2026-07-01T12:00:00+02:00");
