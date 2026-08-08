@@ -4,6 +4,13 @@ import {
   validateChallengeTimestamp,
   validateKsefCredentials,
 } from "./credential-validation.ts";
+import {
+  fallbackRetryDelayMs,
+  MAX_INLINE_RETRY_AFTER_MS,
+  METADATA_MIN_INTERVAL_MS,
+  parseRetryAfterMs,
+  RequestGate,
+} from "./rate-limit.ts";
 
 const KSEF_BASE_URL = "https://api-test.ksef.mf.gov.pl/v2";
 const corsHeaders = {
@@ -13,6 +20,7 @@ const corsHeaders = {
 };
 
 type JsonRecord = Record<string, unknown>;
+const metadataRequestGate = new RequestGate(METADATA_MIN_INTERVAL_MS);
 
 class HttpError extends Error {
   status: number;
@@ -52,6 +60,26 @@ function supabaseError(error: unknown, operation: string): HttpError {
   return new HttpError(500, `Supabase (${operation}): ${errorMessage(error, "nieznany błąd bazy danych")}`);
 }
 
+function ksefProblemMessage(payload: unknown, status: number): string {
+  if (!payload || typeof payload !== "object") return String(payload || `HTTP ${status}`);
+  const problem = payload as JsonRecord;
+  const statusDetails = problem.status && typeof problem.status === "object"
+    ? problem.status as JsonRecord
+    : null;
+  const errors = Array.isArray(problem.errors)
+    ? problem.errors.map((item) => errorMessage(item, "")).filter(Boolean)
+    : [];
+  const details = [
+    problem.detail,
+    problem.title,
+    statusDetails?.description,
+    ...(Array.isArray(statusDetails?.details) ? statusDetails.details : []),
+    ...(Array.isArray(problem.details) ? problem.details : []),
+    ...errors,
+  ].filter((value) => typeof value === "string" && value.length > 0);
+  return details.length ? details.map(String).join(" · ") : `HTTP ${status}`;
+}
+
 async function ksefRequest<T>(
   path: string,
   init: RequestInit = {},
@@ -64,6 +92,10 @@ async function ksefRequest<T>(
   if (bearerToken) headers.set("Authorization", `Bearer ${bearerToken}`);
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (path.startsWith("/invoices/query/metadata")) {
+      const gateDelayMs = metadataRequestGate.reserve();
+      if (gateDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, gateDelayMs));
+    }
     const response = await fetch(`${KSEF_BASE_URL}${path}`, { ...init, headers });
     const contentType = response.headers.get("content-type") || "";
     const payload = contentType.includes("json")
@@ -71,19 +103,22 @@ async function ksefRequest<T>(
       : await response.text().catch(() => "");
 
     if (response.status === 429 && attempt < 2) {
-      const retryAfterSeconds = Number(response.headers.get("retry-after"));
-      const retryAfterMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
-        ? Math.min(5000, retryAfterSeconds * 1000)
-        : 1100;
-      await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
+      const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"))
+        ?? fallbackRetryDelayMs(attempt);
+      if (retryAfterMs > MAX_INLINE_RETRY_AFTER_MS) {
+        const waitSeconds = Math.ceil(retryAfterMs / 1000);
+        throw new HttpError(
+          429,
+          `KSeF: ${ksefProblemMessage(payload, response.status)} Ponów synchronizację najwcześniej za ${waitSeconds} s.`,
+        );
+      }
+      // Niewielki margines chroni przed ponowieniem na samej granicy okna kroczącego.
+      await new Promise((resolve) => setTimeout(resolve, retryAfterMs + 250));
       continue;
     }
 
     if (!response.ok) {
-      const problem = payload as JsonRecord | null;
-      const details = Array.isArray(problem?.details) ? problem.details.join("; ") : "";
-      const message = String(problem?.detail || problem?.title || details || payload || `HTTP ${response.status}`);
-      throw new HttpError(response.status, `KSeF: ${message}`);
+      throw new HttpError(response.status, `KSeF: ${ksefProblemMessage(payload, response.status)}`);
     }
 
     return payload as T;
@@ -416,10 +451,10 @@ Deno.serve(async (request) => {
     const previousHwm = connection?.last_hwm_date ? new Date(connection.last_hwm_date) : fallbackFrom;
     const from = new Date(previousHwm.getTime() - 2 * 60 * 1000).toISOString();
 
-    const [outgoing, incoming] = await Promise.all([
-      queryInvoiceMetadata(accessToken, "Subject1", from),
-      queryInvoiceMetadata(accessToken, "Subject2", from),
-    ]);
+    // Oba kierunki korzystają z tego samego limitu kontekstu i adresu IP.
+    // Sekwencyjne wykonanie wraz ze wspólną bramką zapobiega krótkim seriom żądań.
+    const outgoing = await queryInvoiceMetadata(accessToken, "Subject1", from);
+    const incoming = await queryInvoiceMetadata(accessToken, "Subject2", from);
     const rows = [
       ...outgoing.invoices.map((item) => invoiceRow(item, userId, "sale")),
       ...incoming.invoices.map((item) => invoiceRow(item, userId, "cost")),
