@@ -33,16 +33,20 @@ test("oblicza standardowy ZUS 2026 z chorobowym i najniższą zdrowotną", () =>
   ]);
   assert.equal(result.socialInsuranceDueGrosz, 178829);
   assert.equal(result.socialAndFundsDueGrosz, 192676);
+  assert.equal(result.healthBaseGrosz, 553718);
   assert.equal(result.healthContributionGrosz, 49835);
   assert.equal(result.totalDueGrosz, 242511);
   assert.equal(result.pitDeductibleWhenPaid.labourFundsGrosz, 0);
 });
 
 test("dokładne granice progów pozostają w niższym progu", () => {
-  assert.equal(calculateZus(validInput({ healthRevenueYtdGrosz: 6000000 })).healthTier, "TO_60000");
-  assert.equal(calculateZus(validInput({ healthRevenueYtdGrosz: 6000001 })).healthTier, "TO_300000");
-  assert.equal(calculateZus(validInput({ healthRevenueYtdGrosz: 30000000 })).healthTier, "TO_300000");
-  assert.equal(calculateZus(validInput({ healthRevenueYtdGrosz: 30000001 })).healthTier, "ABOVE_300000");
+  assert.deepEqual(
+    [6000000, 6000001, 30000000, 30000001].map(healthRevenueYtdGrosz => {
+      const result = calculateZus(validInput({ healthRevenueYtdGrosz }));
+      return [result.healthTier, result.healthBaseGrosz];
+    }),
+    [["TO_60000", 553718], ["TO_300000", 922864], ["TO_300000", 922864], ["ABOVE_300000", 1661155]],
+  );
 });
 
 test("oblicza wariant bez dobrowolnego chorobowego", () => {

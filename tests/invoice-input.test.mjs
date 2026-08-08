@@ -92,12 +92,19 @@ test("adaptery nie zamieniają pustej kwoty na zero", () => {
   assert.equal(vat.entries[0].amounts[0].vatAmountGrosz, null);
 });
 
-test("formularz i build korzystają ze wspólnego modułu", async () => {
-  const [app, build] = await Promise.all([
+test("formularz, edycja i build korzystają ze wspólnego modułu", async () => {
+  const [app, build, html, sync] = await Promise.all([
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/build.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../supabase-sync.js", import.meta.url), "utf8"),
   ]);
   assert.match(app, /import \{ prepareInvoice \} from ['"]\.\/invoice-input\.mjs['"]/);
   assert.match(app, /const prepared = prepareInvoice\(/);
+  assert.match(app, /data-edit-invoice/);
+  assert.match(app, /openInvoiceEditor\(/);
+  assert.match(app, /PewnikCloud\.updateInvoice\(/);
+  assert.match(html, /id="invoiceSubmitButton"/);
+  assert.match(sync, /async function updateInvoice\(/);
   assert.match(build, /['"]invoice-input\.mjs['"]/);
 });

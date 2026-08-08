@@ -42,6 +42,7 @@ function baseResult(input) {
       ? input.healthRevenueYtdGrosz
       : null,
     healthTier: null,
+    healthBaseGrosz: null,
     healthContributionGrosz: null,
     totalDueGrosz: null,
     pitDeductibleWhenPaid: {
@@ -147,6 +148,7 @@ export function calculateZus(input) {
     revenueToGrosz === null || input.healthRevenueYtdGrosz <= revenueToGrosz);
   result.healthRevenueYtdGrosz = input.healthRevenueYtdGrosz;
   result.healthTier = tier.code;
+  result.healthBaseGrosz = tier.baseGrosz;
   result.healthContributionGrosz = tier.contributionGrosz;
   result.totalDueGrosz = result.socialAndFundsDueGrosz + result.healthContributionGrosz;
   result.pitDeductibleWhenPaid.socialInsuranceGrosz = result.socialInsuranceDueGrosz;

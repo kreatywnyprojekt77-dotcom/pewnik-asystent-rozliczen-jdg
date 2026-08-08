@@ -16,36 +16,36 @@
       </div>
 
       <nav class="main-nav" aria-label="Główna nawigacja">
+        <span class="nav-section-label">Główne</span>
         <button class="nav-item active" data-view="dashboard">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></svg>
           Podsumowanie
-        </button>
-        <button class="nav-item" data-view="verification">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11 11 13 15 8M5 4h14v16H5V4Zm4-2h6v4H9V2Z"/></svg>
-          Weryfikacja <span class="nav-count" id="verificationCountBadge">0</span>
         </button>
         <button class="nav-item" data-view="invoices">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6V2Zm8 2v4h4M9 13h8M9 17h8M9 9h2"/></svg>
           Faktury <span class="nav-count" id="invoiceCountBadge">6</span>
         </button>
-        <button class="nav-item" data-view="settlements">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18H5V3Zm4 5h6M9 12h6M9 16h4"/></svg>
-          Rozliczenia
-        </button>
         <button class="nav-item" data-view="declarations">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6V2Zm8 2v4h4M9 12h8M9 16h8"/></svg>
-          Deklaracje
-        </button>
-        <button class="nav-item" data-view="rules">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7l8-4Zm-3 9 2 2 4-4"/></svg>
-          Reguły i stawki
+          Deklaracje i płatności
         </button>
       </nav>
 
+      <button class="tutorial-card" id="sidebarTutorial" type="button">
+        <span class="tutorial-card-icon">?</span>
+        <span><strong>Nie wiesz, od czego zacząć?</strong><small>Uruchom samouczek krok po kroku</small></span>
+        <span aria-hidden="true">→</span>
+      </button>
+
       <div class="sidebar-bottom">
+        <span class="nav-section-label">Pomocnicze</span>
+        <button class="nav-item" data-view="rules">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7l8-4Zm-3 9 2 2 4-4"/></svg>
+          Reguły i źródła
+        </button>
         <button class="nav-item" data-view="settings">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Zm8-3.5 2-1-2-3-2 .5-1.5-1L16 5h-4l-.5 2.5-1.5 1L8 8 6 11l2 1v2l-2 1 2 3 2-.5 1.5 1L12 21h4l.5-2.5 1.5-1 2 .5 2-3-2-1v-2Z"/></svg>
-          Ustawienia
+          Profil działalności
         </button>
         <button class="profile-card" id="accountButton" type="button" aria-label="Konto i synchronizacja Supabase">
           <span class="avatar">AK</span>
@@ -60,16 +60,20 @@
         <button class="mobile-menu" id="mobileMenu" aria-label="Otwórz menu">
           <span></span><span></span><span></span>
         </button>
+        <button class="back-navigation" id="backNavigation" type="button" aria-label="Wróć do poprzedniej strony" hidden>
+          <span aria-hidden="true">←</span> Wstecz
+        </button>
         <div class="period-control">
           <button class="icon-button period-arrow" id="previousMonth" aria-label="Poprzedni miesiąc">‹</button>
-          <button class="period-button" id="periodButton">
+          <button class="period-button" id="periodButton" aria-label="Wybierz miesiąc rozliczenia">
             <span id="periodLabel">Czerwiec 2026</span>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
           </button>
           <button class="icon-button period-arrow" id="nextMonth" aria-label="Następny miesiąc">›</button>
+          <div class="period-picker" id="periodPicker" hidden><label>Wybierz miesiąc<input id="periodPickerInput" type="month"></label><button type="button" class="primary-button" id="applyPeriod">Pokaż okres</button></div>
         </div>
         <div class="topbar-actions">
-          <button class="support-button" data-toast="Centrum pomocy będzie dostępne w kolejnej wersji.">
+          <button class="support-button" id="openAssistant" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.5 2.5 0 1 1 3.8 2.1c-.9.5-1.5 1-1.5 2M12 17h.01"/></svg>
             Pomoc
           </button>
@@ -84,7 +88,7 @@
         <div class="page-heading">
           <div>
             <p class="eyebrow">Miesięczne rozliczenie</p>
-            <h1>Wszystko pod kontrolą, Anno</h1>
+            <h1 id="dashboardGreeting">Twoje rozliczenie miesiąca</h1>
             <p>Sprawdziliśmy faktury i ustawienia Twojej działalności.</p>
           </div>
           <button class="secondary-button" id="refreshCalculation">
@@ -95,16 +99,45 @@
 
         <div class="ready-banner">
           <div class="ready-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 12 3 3 7-7"/></svg></div>
-          <div><strong id="calculationReadinessTitle">Rozliczenie jest gotowe</strong><span id="calculationReadinessDescription">Nie znaleźliśmy braków ani sytuacji wymagających uwagi.</span></div>
-          <button type="button" class="secondary-button verification-banner-button" data-view-target="verification">Zweryfikuj rozliczenie</button>
-          <span class="status-pill success" id="overallCalculationStatus">Gotowe</span>
+          <div><strong id="calculationReadinessTitle">Sprawdzamy dane</strong><span id="calculationReadinessDescription">Za chwilę pokażemy stan rozliczenia.</span></div>
+          <button type="button" class="secondary-button verification-banner-button" id="readinessAction" data-scroll-target="dashboardVerificationPanel">Zobacz, co zrobić</button>
+          <span class="status-pill neutral" id="overallCalculationStatus">Sprawdzanie</span>
         </div>
+
+        <section class="dashboard-verification" id="dashboardVerificationPanel" aria-labelledby="dashboardVerificationTitle">
+          <div class="verification-section-heading">
+            <div><p class="eyebrow">Co wymaga uwagi</p><h2 id="dashboardVerificationTitle">Dokończ rozliczenie krok po kroku</h2><p class="section-description">Nie musisz znać zasad księgowych. Wskażemy brakujące informacje i przeniesiemy Cię dokładnie tam, gdzie możesz je uzupełnić.</p></div>
+            <div class="verification-heading-status"><span class="status-pill warning" id="verificationOverallStatus">Sprawdzamy</span><small><strong id="verificationOpenCount">0</strong> <span id="verificationOpenLabel">rzeczy do zrobienia</span></small></div>
+          </div>
+          <div class="verification-task-list compact-verification-list">
+            <article class="card verification-task" id="verificationProfileTask">
+              <span class="task-state-icon">✓</span>
+              <div class="verification-task-copy"><strong>Uzupełnij profil działalności</strong><span id="verificationProfileStatus">Sprawdzamy dane</span><p id="verificationProfileHelp">Dane firmy, właściciela i rodzajów usług są potrzebne do przygotowania dokumentów.</p></div>
+              <div class="verification-task-actions"><button type="button" class="secondary-button" data-view-target="settings">Otwórz profil</button><button type="button" class="assistant-link" data-assistant-topic="pkwiu">Dlaczego to potrzebne?</button></div>
+            </article>
+            <article class="card verification-task" id="verificationSalesTask">
+              <span class="task-state-icon">✓</span>
+              <div class="verification-task-copy"><strong>Sprawdź dokumenty sprzedaży</strong><span id="verificationSalesCount">0 faktur sprzedażowych</span><p id="verificationSalesHelp">Sprawdzamy dokumenty dla wybranego miesiąca.</p></div>
+              <div class="verification-task-actions"><button type="button" class="secondary-button" data-view-target="invoices">Otwórz faktury</button><button type="button" class="text-button" id="confirmNoSales">Potwierdź brak sprzedaży</button></div>
+            </article>
+            <article class="card verification-task" id="verificationDeductionTask">
+              <span class="task-state-icon">✓</span>
+              <div class="verification-task-copy"><strong>Sprawdź składki zmniejszające ryczałt</strong><span id="verificationDeductionValue">0,00 zł</span><p id="verificationDeductionHelp">Kwota dotyczy tylko wybranego miesiąca.</p></div>
+              <div class="verification-task-control"><div class="input-suffix"><input id="verificationDeduction" type="number" min="0" step="0.01" aria-label="Składki i odliczenia zmniejszające ryczałt"><span>zł</span></div><button type="button" class="secondary-button" id="savePeriodDeduction">Zapisz i przelicz</button></div>
+            </article>
+            <article class="card verification-task" id="verificationVatTask">
+              <span class="task-state-icon">✓</span>
+              <div class="verification-task-copy"><strong>Potwierdź odliczenie VAT</strong><span id="verificationVatStatus">Gotowe</span><p>Przy kosztach wskaż, czy VAT można odliczyć w całości, częściowo czy wcale.</p></div>
+              <div class="verification-task-actions"><button type="button" class="secondary-button" data-view-target="invoices">Sprawdź faktury</button><button type="button" class="assistant-link" data-assistant-topic="vat">Wyjaśnij mi to</button></div>
+            </article>
+          </div>
+        </section>
 
         <div class="summary-grid">
           <article class="card total-card">
             <div class="card-label">Łącznie do zapłaty</div>
             <div class="total-amount" id="grandTotal">7 539,80 zł</div>
-            <div class="total-meta"><span>3 zobowiązania</span><span class="dot"></span><span>najbliższy termin: <strong id="nearestDeadline">20 lipca</strong></span></div>
+            <div class="total-meta"><span id="obligationCount">3 zobowiązania</span><span class="dot"></span><span>najbliższy termin: <strong id="nearestDeadline">20 lipca</strong></span></div>
             <div class="total-divider"></div>
             <div class="reserve-row">
               <div><span class="mini-icon">✓</span><div><strong>Odłóż tę kwotę</strong><small>na rachunku firmowym</small></div></div>
@@ -116,10 +149,10 @@
             <article class="card obligation-card" data-obligation="pit">
               <div class="obligation-accent blue"></div>
               <div class="obligation-top">
-                <div class="obligation-title"><span class="tax-icon blue-bg">%</span><div><span>Ryczałt (PIT-28)</span><strong id="pitAmount">2 936,41 zł</strong></div></div>
+                <div class="obligation-title"><span class="tax-icon blue-bg">%</span><div><span>Ryczałt za miesiąc</span><strong id="pitAmount">2 936,41 zł</strong></div></div>
                 <span class="status-pill neutral" id="pitStatus">Do zapłaty</span>
               </div>
-              <div class="deadline-row"><svg viewBox="0 0 24 24"><path d="M5 5h14v15H5V5Zm3-3v6M16 2v6M5 10h14"/></svg><span>Termin: <strong id="pitDeadline">20 lipca 2026</strong></span><span class="days-left">za 8 dni</span></div>
+              <div class="deadline-row"><svg viewBox="0 0 24 24"><path d="M5 5h14v15H5V5Zm3-3v6M16 2v6M5 10h14"/></svg><span>Termin: <strong id="pitDeadline">20 lipca 2026</strong></span><span class="days-left" id="pitDaysLeft"></span></div>
               <button class="calculation-toggle" aria-expanded="false">Jak to policzyliśmy?<svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></button>
               <div class="calculation-details" id="pitDetails"></div>
             </article>
@@ -130,7 +163,7 @@
                 <div class="obligation-title"><span class="tax-icon cyan-bg">VAT</span><div><span>Podatek VAT (JPK_V7M)</span><strong id="vatAmount">2 060,00 zł</strong></div></div>
                 <span class="status-pill neutral" id="vatStatus">Do zapłaty</span>
               </div>
-              <div class="deadline-row"><svg viewBox="0 0 24 24"><path d="M5 5h14v15H5V5Zm3-3v6M16 2v6M5 10h14"/></svg><span>Termin: <strong id="vatDeadline">27 lipca 2026</strong></span><span class="days-left">za 15 dni</span></div>
+              <div class="deadline-row"><svg viewBox="0 0 24 24"><path d="M5 5h14v15H5V5Zm3-3v6M16 2v6M5 10h14"/></svg><span>Termin: <strong id="vatDeadline">27 lipca 2026</strong></span><span class="days-left" id="vatDaysLeft"></span></div>
               <button class="calculation-toggle" aria-expanded="false">Jak to policzyliśmy?<svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></button>
               <div class="calculation-details" id="vatDetails"></div>
             </article>
@@ -141,91 +174,61 @@
                 <div class="obligation-title"><span class="tax-icon violet-bg">ZUS</span><div><span>Składki ZUS</span><strong id="zusAmount">2 543,39 zł</strong></div></div>
                 <span class="status-pill neutral" id="zusStatus">Do zapłaty</span>
               </div>
-              <div class="deadline-row"><svg viewBox="0 0 24 24"><path d="M5 5h14v15H5V5Zm3-3v6M16 2v6M5 10h14"/></svg><span>Termin: <strong id="zusDeadline">20 lipca 2026</strong></span><span class="days-left">za 8 dni</span></div>
+              <div class="deadline-row"><svg viewBox="0 0 24 24"><path d="M5 5h14v15H5V5Zm3-3v6M16 2v6M5 10h14"/></svg><span>Termin: <strong id="zusDeadline">20 lipca 2026</strong></span><span class="days-left" id="zusDaysLeft"></span></div>
               <button class="calculation-toggle" aria-expanded="false">Jak to policzyliśmy?<svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></button>
               <div class="calculation-details" id="zusDetails"></div>
             </article>
           </div>
         </div>
 
+        <article class="card obligation-calendar-card">
+          <div class="section-heading"><div><p class="eyebrow">Kalendarz miesiąca</p><h2>Wszystkie terminy w jednym miejscu</h2></div><span>Dokumenty i płatności za <strong data-period-text>wybrany miesiąc</strong></span></div>
+          <div class="obligation-calendar-list">
+            <div class="obligation-calendar-row">
+              <span class="calendar-date blue"><strong id="pitCalendarDay">20</strong><small id="pitCalendarMonth">sierpnia</small></span>
+              <div><strong>Zapłać ryczałt</strong><p>Przelew podatkowy za rozliczany miesiąc.</p></div>
+              <span class="calendar-result" id="pitCalendarResult">Sprawdzamy kwotę</span>
+              <button type="button" class="text-button" data-view-target="declarations">Pokaż dane</button>
+            </div>
+            <div class="obligation-calendar-row">
+              <span class="calendar-date violet"><strong id="zusCalendarDay">20</strong><small id="zusCalendarMonth">sierpnia</small></span>
+              <div><strong>Rozlicz i zapłać ZUS</strong><p>ZUS DRA oraz składki społeczne i zdrowotna.</p></div>
+              <span class="calendar-result" id="zusCalendarResult">Sprawdzamy kwotę</span>
+              <button type="button" class="text-button" data-view-target="declarations">Pokaż ZUS</button>
+            </div>
+            <div class="obligation-calendar-row">
+              <span class="calendar-date cyan"><strong id="vatCalendarDay">25</strong><small id="vatCalendarMonth">sierpnia</small></span>
+              <div><strong>Wyślij JPK_V7M i rozlicz VAT</strong><p>JPK wysyłasz również wtedy, gdy VAT do zapłaty wynosi 0 zł.</p></div>
+              <span class="calendar-result" id="vatCalendarResult">Sprawdzamy kwotę</span>
+              <button type="button" class="text-button" data-view-target="declarations">Pokaż JPK</button>
+            </div>
+          </div>
+        </article>
+
         <div class="dashboard-lower-grid">
           <article class="card action-card">
             <div class="section-heading"><div><p class="eyebrow">Plan działania</p><h2>Co teraz zrobić?</h2></div><span id="taskProgress">0 z 3</span></div>
             <div class="action-list">
-              <label class="action-item"><input type="checkbox" data-task="transfers"><span class="custom-check"></span><span class="action-number">1</span><span class="action-copy"><strong>Wykonaj 3 przelewy</strong><small>Ryczałt, VAT oraz składki ZUS</small></span><button type="button" class="text-button" data-toast="Dane do przelewów są w podglądzie deklaracji.">Pokaż dane</button></label>
+              <label class="action-item"><input type="checkbox" data-task="transfers"><span class="custom-check"></span><span class="action-number">1</span><span class="action-copy"><strong id="transferTaskTitle">Sprawdź płatności</strong><small id="transferTaskHelp">Pokażemy tylko kwoty, które faktycznie trzeba zapłacić.</small></span><button type="button" class="text-button" data-view-target="declarations">Pokaż dane</button></label>
               <label class="action-item"><input type="checkbox" data-task="jpk"><span class="custom-check"></span><span class="action-number">2</span><span class="action-copy"><strong>Wyślij JPK_V7M</strong><small>Termin do <span id="jpkDeadline">27 lipca</span></small></span><button type="button" class="text-button preview-declaration" data-type="JPK_V7M">Podgląd</button></label>
-              <label class="action-item"><input type="checkbox" data-task="archive"><span class="custom-check"></span><span class="action-number">3</span><span class="action-copy"><strong>Zachowaj potwierdzenia</strong><small>Dodaj UPO i potwierdzenia przelewów</small></span><button type="button" class="text-button" data-toast="Przechowywanie UPO pojawi się po integracji z urzędem.">Dodaj</button></label>
+              <label class="action-item"><input type="checkbox" data-task="archive"><span class="custom-check"></span><span class="action-number">3</span><span class="action-copy"><strong>Zachowaj potwierdzenia</strong><small>Dodaj UPO i potwierdzenia przelewów</small></span><button type="button" class="text-button" disabled title="Funkcja w przygotowaniu">Wkrótce</button></label>
             </div>
           </article>
 
           <article class="card source-card">
-            <div class="section-heading"><div><p class="eyebrow">Wiarygodność</p><h2>Reguły użyte w obliczeniach</h2></div><span class="verified-badge"><svg viewBox="0 0 24 24"><path d="m7 12 3 3 7-7"/></svg>Do weryfikacji</span></div>
+            <div class="section-heading"><div><p class="eyebrow">Wiarygodność</p><h2>Reguły użyte w obliczeniach</h2></div><span class="verified-badge"><svg viewBox="0 0 24 24"><path d="m7 12 3 3 7-7"/></svg>Źródła dostępne</span></div>
             <div class="source-info"><span class="source-icon">§</span><div><strong>Zestaw reguł DEMO 2026.1</strong><small>Obowiązuje od 1 stycznia 2026 · aktualizacja 8 lipca 2026</small></div></div>
-            <p class="source-note">Każda kwota ma zapisaną wersję reguły i źródło. Wartości demonstracyjne możesz zmienić w sekcji „Reguły i stawki”.</p>
+            <p class="source-note">Każda kwota ma zapisaną wersję reguły i źródło. Stawki przypisane do usług potwierdzasz w Profilu działalności.</p>
             <button class="secondary-button full-width" data-view-target="rules">Sprawdź reguły i źródła <span>→</span></button>
           </article>
         </div>
 
-        <p class="prototype-note"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 5v5M12 16h.01"/></svg>To prototyp edukacyjny. Kwoty opierają się na przykładowych, ręcznie ustawionych regułach — przed płatnością zweryfikuj je z aktualnymi przepisami.</p>
-      </section>
-
-      <section class="view" id="verificationView">
-        <div class="page-heading verification-heading">
-          <div><p class="eyebrow">Centrum weryfikacji</p><h1>Dokończ rozliczenie krok po kroku</h1><p>Stałe dane działalności potwierdzasz raz. Dokumenty i odliczenia sprawdzasz dla wybranego miesiąca.</p></div>
-          <div class="verification-heading-status"><span class="status-pill warning" id="verificationOverallStatus">Do weryfikacji</span><small><strong id="verificationOpenCount">0</strong> otwartych zadań</small></div>
-        </div>
-
-        <article class="card verification-intro">
-          <span class="verification-intro-icon">1×</span>
-          <div><strong>PKWiU jest częścią profilu działalności</strong><p>Przypisz klasyfikację do kategorii usługi i potwierdź ją jeden raz. Aplikacja będzie stosować ją automatycznie w każdym miesiącu, dopóki obowiązuje wskazana konfiguracja.</p></div>
+        <article class="card period-history-card">
+          <div class="section-heading"><div><p class="eyebrow">Poprzednie miesiące</p><h2>Historia rozliczeń</h2></div><span>Wybierz miesiąc, aby zobaczyć jego podsumowanie</span></div>
+          <div class="period-history-list" id="periodHistoryList"></div>
         </article>
 
-        <div class="verification-section-heading"><div><p class="eyebrow">Konfiguracja stała</p><h2>Profil kategorii ryczałtu</h2></div><span>Zapisywany lokalnie i w Supabase</span></div>
-        <div class="profile-grid">
-          <article class="card profile-verification-card" id="softwareProfileCard">
-            <div class="profile-verification-top"><div><span class="profile-icon">&lt;/&gt;</span><div><strong>Usługi programistyczne</strong><small>Stosowane do faktur przypisanych do kategorii „Programowanie”</small></div></div><span class="status-pill warning" id="softwareProfileStatus">Uzupełnij raz</span></div>
-            <div class="verification-form-grid">
-              <label>PKWiU<input id="softwareProfilePkwiu" placeholder="Wpisz potwierdzoną klasyfikację"></label>
-              <label>Stawka ryczałtu<div class="input-suffix"><input id="softwareProfileRate" type="number" min="0" step="0.1"><span>%</span></div></label>
-              <label class="span-2">Podstawa lub źródło potwierdzenia<input id="softwareProfileLegalBasis" placeholder="Np. interpretacja, konsultacja księgowa lub przepis"></label>
-              <label>Obowiązuje od<input id="softwareProfileValidFrom" type="month"></label>
-              <label>Obowiązuje do<input id="softwareProfileValidTo" type="month"></label>
-            </div>
-            <label class="verification-confirm"><input id="softwareProfileConfirmed" type="checkbox"><span>Potwierdzam, że klasyfikacja i stawka zostały zweryfikowane dla tej działalności.</span></label>
-          </article>
-
-          <article class="card profile-verification-card" id="consultingProfileCard">
-            <div class="profile-verification-top"><div><span class="profile-icon">?</span><div><strong>Usługi konsultingowe</strong><small>Stosowane do faktur przypisanych do kategorii „Konsulting”</small></div></div><span class="status-pill warning" id="consultingProfileStatus">Uzupełnij raz</span></div>
-            <div class="verification-form-grid">
-              <label>PKWiU<input id="consultingProfilePkwiu" placeholder="Wpisz potwierdzoną klasyfikację"></label>
-              <label>Stawka ryczałtu<div class="input-suffix"><input id="consultingProfileRate" type="number" min="0" step="0.1"><span>%</span></div></label>
-              <label class="span-2">Podstawa lub źródło potwierdzenia<input id="consultingProfileLegalBasis" placeholder="Np. interpretacja, konsultacja księgowa lub przepis"></label>
-              <label>Obowiązuje od<input id="consultingProfileValidFrom" type="month"></label>
-              <label>Obowiązuje do<input id="consultingProfileValidTo" type="month"></label>
-            </div>
-            <label class="verification-confirm"><input id="consultingProfileConfirmed" type="checkbox"><span>Potwierdzam, że klasyfikacja i stawka zostały zweryfikowane dla tej działalności.</span></label>
-          </article>
-        </div>
-        <div class="profile-actions"><p>Aplikacja nie zgaduje PKWiU. Wprowadź klasyfikację potwierdzoną dla rzeczywistego zakresu usług.</p><button type="button" class="primary-button" id="saveCategoryProfiles">Zapisz profil działalności</button></div>
-
-        <div class="verification-section-heading period-verification-heading"><div><p class="eyebrow">Wybrany okres</p><h2 id="verificationPeriodName">Czerwiec 2026</h2></div><span>Te kroki mogą zmieniać się co miesiąc</span></div>
-        <div class="verification-task-list">
-          <article class="card verification-task" id="verificationSalesTask">
-            <span class="task-state-icon">✓</span>
-            <div class="verification-task-copy"><strong>Dokumenty sprzedaży</strong><span id="verificationSalesCount">0 faktur sprzedażowych</span><p id="verificationSalesHelp">Sprawdzamy dokumenty dla wybranego miesiąca.</p></div>
-            <div class="verification-task-actions"><button type="button" class="secondary-button" data-view-target="invoices">Przejdź do faktur</button><button type="button" class="text-button" id="confirmNoSales">Potwierdź brak sprzedaży</button></div>
-          </article>
-          <article class="card verification-task" id="verificationDeductionTask">
-            <span class="task-state-icon">✓</span>
-            <div class="verification-task-copy"><strong>Odliczenie od przychodu</strong><span id="verificationDeductionValue">0,00 zł</span><p id="verificationDeductionHelp">Kwota dotyczy tylko wybranego miesiąca.</p></div>
-            <div class="verification-task-control"><div class="input-suffix"><input id="verificationDeduction" type="number" min="0" step="0.01"><span>zł</span></div><button type="button" class="secondary-button" id="savePeriodDeduction">Zapisz i przelicz</button></div>
-          </article>
-          <article class="card verification-task" id="verificationVatTask">
-            <span class="task-state-icon">✓</span>
-            <div class="verification-task-copy"><strong>Decyzje dotyczące VAT</strong><span id="verificationVatStatus">Gotowe</span><p>Potwierdź zakres odliczenia VAT przy fakturach kosztowych wymagających decyzji.</p></div>
-            <button type="button" class="secondary-button" data-view-target="invoices">Sprawdź faktury</button>
-          </article>
-        </div>
+        <p class="prototype-note"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 5v5M12 16h.01"/></svg>To prototyp edukacyjny. Kwoty opierają się na przykładowych, ręcznie ustawionych regułach — przed płatnością zweryfikuj je z aktualnymi przepisami.</p>
       </section>
 
       <section class="view" id="invoicesView">
@@ -238,10 +241,15 @@
           <article class="mini-metric"><span>Koszty netto</span><strong id="costMetric">2 600,00 zł</strong><small id="costCountMetric">2 faktury kosztowe</small></article>
           <article class="mini-metric"><span>Bilans VAT</span><strong id="vatMetric">2 060,00 zł</strong><small>VAT należny minus naliczony</small></article>
         </div>
+        <article class="invoice-attention-bar" id="invoiceAttentionBar">
+          <div><span class="attention-count" id="invoiceAttentionCount">0</span><div><strong id="invoiceAttentionTitle">Wszystkie faktury są sprawdzone</strong><p id="invoiceAttentionText">Dokumenty tego miesiąca mają komplet informacji potrzebnych do obliczeń.</p></div></div>
+          <button type="button" class="secondary-button" id="showReviewInvoices">Pokaż wymagające uwagi</button>
+        </article>
         <article class="card table-card">
           <div class="table-toolbar">
             <div class="search-field"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg><input id="invoiceSearch" type="search" placeholder="Szukaj po numerze lub kontrahencie"></div>
-            <select id="invoiceFilter" aria-label="Filtr typu faktury"><option value="all">Wszystkie dokumenty</option><option value="sale">Sprzedaż</option><option value="cost">Koszt</option></select>
+            <select id="invoicePeriodFilter" aria-label="Filtr okresu"><option value="period">Wybrany miesiąc</option><option value="all">Wszystkie okresy</option></select>
+            <select id="invoiceFilter" aria-label="Filtr faktur"><option value="all">Wszystkie dokumenty</option><option value="review">Wymagają uwagi</option><option value="sale">Sprzedaż</option><option value="cost">Koszt</option></select>
           </div>
           <div class="invoice-table-wrap">
             <table class="invoice-table">
@@ -253,36 +261,15 @@
         </article>
       </section>
 
-      <section class="view" id="settlementsView">
-        <div class="page-heading"><div><p class="eyebrow">Historia</p><h1>Rozliczenia</h1><p>Twoje miesięczne zobowiązania w jednym miejscu.</p></div></div>
-        <article class="card settlement-card">
-          <div class="settlement-current"><span class="settlement-month">CZE<br><strong>2026</strong></span><div><span class="status-pill success">Gotowe</span><h2>Czerwiec 2026</h2><p>3 zobowiązania · 6 faktur</p></div><strong class="settlement-total" id="settlementTotal">7 539,80 zł</strong><button class="secondary-button" data-view-target="dashboard">Otwórz</button></div>
-          <div class="history-divider"></div>
-          <div class="settlement-placeholder"><div class="placeholder-icon">↗</div><div><strong>Tu pojawią się kolejne miesiące</strong><p>Po zmianie okresu i wykonaniu obliczeń zapiszesz następne rozliczenie.</p></div></div>
-        </article>
-      </section>
-
       <section class="view" id="declarationsView">
         <div class="page-heading">
-          <div><p class="eyebrow">Dokumenty za wybrany okres</p><h1>Deklaracje i rozliczenia</h1><p>Sprawdź dane, obejrzyj dokument i pobierz PDF lub właściwy plik XML.</p></div>
+          <div><p class="eyebrow">Ostatni krok miesiąca</p><h1>Deklaracje i płatności</h1><p>Przygotuj i pobierz dokumenty do samodzielnego importu w narzędziach MF oraz ZUS. Aplikacja nie wysyła ich do urzędu.</p></div>
           <span class="version-tag">JPK_V7M(3) · ZUS 2.27</span>
         </div>
 
-        <article class="card declaration-profile-card">
-          <div class="section-heading"><div><p class="eyebrow">Uzupełnij jeden raz</p><h2>Profil deklaracyjny właścicielki</h2></div><span>Dane zapisywane razem z profilem firmy</span></div>
-          <p class="declaration-profile-intro">Aplikacja użyje tych danych w JPK_V7M i podglądzie ZUS DRA. Nie zapisujemy profilu zaufanego, certyfikatu ani danych logowania do urzędu.</p>
-          <div class="declaration-profile-grid">
-            <label>Imię<input id="declarationProfileFirstName" autocomplete="given-name"></label>
-            <label>Nazwisko<input id="declarationProfileLastName" autocomplete="family-name"></label>
-            <label>Data urodzenia<input id="declarationProfileBirthDate" type="date"></label>
-            <label>PESEL<input id="declarationProfilePesel" inputmode="numeric" maxlength="11"></label>
-            <label>REGON<input id="declarationProfileRegon" inputmode="numeric" maxlength="9"></label>
-            <label>Kod urzędu skarbowego<input id="declarationProfileTaxOfficeCode" inputmode="numeric" maxlength="4" placeholder="np. 1215"></label>
-            <label>E-mail<input id="declarationProfileEmail" type="email" autocomplete="email"></label>
-            <label>Telefon<input id="declarationProfilePhone" type="tel" autocomplete="tel"></label>
-            <label>Kod tytułu ubezpieczenia ZUS<input id="declarationProfileZusInsuranceTitleCode" inputmode="numeric" maxlength="6" placeholder="np. 051000"></label>
-          </div>
-          <div class="declaration-profile-actions"><button type="button" class="primary-button" id="saveDeclarationProfile">Zapisz profil deklaracyjny</button></div>
+        <article class="card declaration-profile-card declaration-profile-summary">
+          <div><p class="eyebrow">Dane źródłowe</p><h2>Dane pobieramy z Profilu działalności</h2><p id="declarationProfileSummary">Sprawdzamy kompletność danych właściciela i firmy.</p></div>
+          <button type="button" class="secondary-button" data-view-target="settings">Sprawdź profil</button>
         </article>
 
         <div class="declaration-cards">
@@ -297,7 +284,7 @@
           <article class="card declaration-card">
             <div class="declaration-card-top"><span class="declaration-mark cyan">VAT</span><div><span>Struktura obowiązująca od 1.02.2026</span><h2>JPK_V7M(3)</h2></div><span class="status-pill warning" id="declarationStatus-jpk">Sprawdzanie…</span></div>
             <strong class="declaration-amount" id="declarationAmount-jpk">—</strong>
-            <p>Podgląd ewidencji i deklaracji VAT. XML jest przeznaczony do późniejszego przesłania przez narzędzie MF.</p>
+            <p>Plik XML sprawdzany lokalnie z oficjalnym XSD. Narzędzie MF wykona przy imporcie końcowe kontrole biznesowe.</p>
             <div id="declarationFindings-jpk"></div>
             <div class="declaration-actions"><button type="button" class="secondary-button" data-declaration-preview="jpk">Podgląd</button><button type="button" class="secondary-button" data-declaration-pdf="jpk">Pobierz PDF</button><button type="button" class="primary-button" data-declaration-xml="jpk">Pobierz XML</button></div>
           </article>
@@ -305,21 +292,21 @@
           <article class="card declaration-card">
             <div class="declaration-card-top"><span class="declaration-mark violet">ZUS</span><div><span>Deklaracja rozliczeniowa</span><h2>ZUS DRA</h2></div><span class="status-pill warning" id="declarationStatus-zus">Sprawdzanie…</span></div>
             <strong class="declaration-amount" id="declarationAmount-zus">—</strong>
-            <p>Podgląd dla JDG bez pracowników. XML pozostaje wersją techniczną do czasu przejścia testów akceptacyjnych ZUS.</p>
+            <p>KEDU 2.27 z ZUS DRA dla JDG bez pracowników. Po lokalnej kontroli XSD narzędzie ZUS wykona przy imporcie końcowe kontrole biznesowe.</p>
             <div id="declarationFindings-zus"></div>
-            <div class="declaration-actions"><button type="button" class="secondary-button" data-declaration-preview="zus">Podgląd</button><button type="button" class="secondary-button" data-declaration-pdf="zus">Pobierz PDF</button><button type="button" class="primary-button" data-declaration-xml="zus">Techniczny XML</button></div>
+            <div class="declaration-actions"><button type="button" class="secondary-button" data-declaration-preview="zus">Podgląd</button><button type="button" class="secondary-button" data-declaration-pdf="zus">Pobierz PDF</button><button type="button" class="primary-button" data-declaration-xml="zus">Pobierz KEDU XML</button></div>
           </article>
         </div>
       </section>
 
       <section class="view" id="rulesView">
-        <div class="page-heading"><div><p class="eyebrow">Silnik obliczeniowy</p><h1>Reguły i stawki</h1><p>Wartości używane w tym prototypie. Zmiana stawki natychmiast przeliczy podsumowanie.</p></div><button class="secondary-button" id="restoreRules">Przywróć wartości demo</button></div>
+        <div class="page-heading"><div><p class="eyebrow">Transparentność obliczeń</p><h1>Reguły i źródła</h1><p>Sprawdź parametry użyte w obliczeniach. Stawki kategorii zmienisz wyłącznie w Profilu działalności.</p></div><button class="secondary-button advanced-only" id="restoreRules">Przywróć wartości demo</button></div>
         <div class="rule-layout">
           <article class="card rule-form-card">
             <div class="section-heading"><div><p class="eyebrow">Podatki</p><h2>Stawki ryczałtu</h2></div><span class="version-tag">DEMO 2026.1</span></div>
             <div class="form-grid">
-              <label>Usługi programistyczne<div class="input-suffix"><input type="number" step="0.1" min="0" id="rateSoftware"><span>%</span></div></label>
-              <label>Usługi konsultingowe<div class="input-suffix"><input type="number" step="0.1" min="0" id="rateConsulting"><span>%</span></div></label>
+              <label>Usługi programistyczne<div class="input-suffix"><input type="number" step="0.1" min="0" id="rateSoftware" disabled><span>%</span></div></label>
+              <label>Usługi konsultingowe<div class="input-suffix"><input type="number" step="0.1" min="0" id="rateConsulting" disabled><span>%</span></div></label>
             </div>
             <div class="rule-separator"></div>
             <div class="section-heading"><div><p class="eyebrow">VAT</p><h2>Rozliczenie nadwyżki</h2></div><span class="version-tag">PL-VAT-2026.1</span></div>
@@ -333,7 +320,7 @@
               <label class="switch-row"><span><strong>Minimalna podstawa standardowa</strong><small>Bez ulg i Małego ZUS Plus</small></span><input type="checkbox" checked disabled><span class="switch"></span></label>
               <label class="switch-row"><span><strong>Dobrowolne chorobowe</strong><small>Uwzględnione w kalkulacji</small></span><input type="checkbox" checked disabled><span class="switch"></span></label>
             </div>
-            <button class="primary-button" id="saveRules">Zapisz i przelicz</button>
+            <button class="primary-button" id="saveRules">Zapisz ustawienie VAT</button>
           </article>
           <article class="card sources-list-card">
             <div class="section-heading"><div><p class="eyebrow">Pochodzenie</p><h2>Oficjalne źródła</h2></div></div>
@@ -346,11 +333,39 @@
       </section>
 
       <section class="view" id="settingsView">
-        <div class="page-heading"><div><p class="eyebrow">Konfiguracja</p><h1>Ustawienia działalności</h1><p>Dane wpływające na miesięczne rozliczenia.</p></div></div>
+        <div class="page-heading"><div><p class="eyebrow">Konfiguracja wykonywana jeden raz</p><h1>Profil działalności</h1><p>Jedno miejsce na dane firmy, właściciela, podatki, ZUS i rodzaje usług.</p></div><div class="profile-heading-actions"><button type="button" class="text-button" id="restartOnboarding">Uruchom samouczek</button><div class="profile-completeness"><strong id="profileCompletion">0%</strong><span>kompletności profilu</span></div></div></div>
         <article class="card settings-card">
           <div class="settings-section"><div><h2>Dane działalności</h2><p>Bez logowania dane pozostają w tej przeglądarce. Po połączeniu konta są również synchronizowane z Supabase.</p></div><div class="form-stack"><label>Nazwa firmy<input id="companyName" value="DEMO — Studio Testowe (dane syntetyczne)"></label><label>NIP<input id="companyNip" value="0000000000" inputmode="numeric"></label></div></div>
           <div class="settings-separator"></div>
-          <div class="settings-section"><div><h2>Profil rozliczeń</h2><p>Prototyp obsługuje podstawowy wariant JDG.</p></div><div class="form-stack compact"><label class="select-label">Forma opodatkowania<select disabled><option>Ryczałt od przychodów ewidencjonowanych</option></select></label><label class="switch-row"><span><strong>Czynny podatnik VAT</strong><small>Rozliczenie miesięczne</small></span><input type="checkbox" checked disabled><span class="switch"></span></label><label class="switch-row"><span><strong>Standardowy ZUS</strong><small>Bez ulg i Małego ZUS Plus</small></span><input type="checkbox" checked disabled><span class="switch"></span></label></div></div>
+          <div class="settings-section owner-profile-section"><div><h2>Właściciel i urzędy</h2><p>Dane używane w JPK_V7M i podglądzie ZUS DRA. Nie zapisujemy profilu zaufanego ani danych logowania do urzędu.</p></div><div class="declaration-profile-grid">
+            <label>Imię<input id="declarationProfileFirstName" autocomplete="given-name"></label>
+            <label>Nazwisko<input id="declarationProfileLastName" autocomplete="family-name"></label>
+            <label>Data urodzenia<input id="declarationProfileBirthDate" type="date"></label>
+            <label>PESEL<input id="declarationProfilePesel" inputmode="numeric" maxlength="11"></label>
+            <label>REGON<input id="declarationProfileRegon" inputmode="numeric" maxlength="9"></label>
+            <label>Kod urzędu skarbowego<input id="declarationProfileTaxOfficeCode" inputmode="numeric" maxlength="4" placeholder="np. 1215"></label>
+            <label>E-mail<input id="declarationProfileEmail" type="email" autocomplete="email"></label>
+            <label>Telefon<input id="declarationProfilePhone" type="tel" autocomplete="tel"></label>
+            <label>Nazwa skrócona płatnika ZUS<input id="declarationProfileZusShortName" maxlength="31" placeholder="Zgodna ze zgłoszeniem w ZUS"></label>
+            <label>Kod tytułu ubezpieczenia ZUS<input id="declarationProfileZusInsuranceTitleCode" inputmode="numeric" maxlength="6" placeholder="np. 051000"></label>
+          </div></div>
+          <div class="settings-separator"></div>
+          <div class="settings-section"><div><h2>Podatki i ZUS</h2><p>Prototyp obsługuje obecnie jeden wariant JDG. Jeśli nie wiesz, co oznaczają te ustawienia, skorzystaj z pomocy kontekstowej.</p><button type="button" class="assistant-link" data-assistant-topic="taxation">Nie wiem, którą opcję wybrać</button></div><div class="form-stack compact"><label class="select-label">Forma opodatkowania<select disabled><option>Ryczałt od przychodów ewidencjonowanych</option></select></label><label class="switch-row"><span><strong>Czynny podatnik VAT</strong><small>Rozliczenie miesięczne</small></span><input type="checkbox" checked disabled><span class="switch"></span></label><label class="switch-row"><span><strong>Standardowy ZUS</strong><small>Bez ulg i Małego ZUS Plus</small></span><input type="checkbox" checked disabled><span class="switch"></span></label></div></div>
+          <div class="settings-separator"></div>
+          <div class="settings-wide-section"><div class="settings-title-row"><div><h2>Rodzaje usług i ryczałt</h2><p>PKWiU i stawkę potwierdzasz raz. Aplikacja używa ich w kolejnych miesiącach w podanym okresie.</p></div><button type="button" class="assistant-link" data-assistant-topic="pkwiu">Pomóż mi z PKWiU i stawką</button></div>
+            <div class="profile-grid">
+              <article class="profile-verification-card" id="softwareProfileCard">
+                <div class="profile-verification-top"><div><span class="profile-icon">&lt;/&gt;</span><div><strong>Usługi programistyczne</strong><small>Kategoria „Programowanie” na fakturach</small></div></div><span class="status-pill warning" id="softwareProfileStatus">Uzupełnij raz</span></div>
+                <div class="verification-form-grid"><label>PKWiU<input id="softwareProfilePkwiu" placeholder="Potwierdzona klasyfikacja"></label><label>Stawka ryczałtu<div class="input-suffix"><input id="softwareProfileRate" type="number" min="0" step="0.1"><span>%</span></div></label><label class="span-2">Źródło potwierdzenia<input id="softwareProfileLegalBasis" placeholder="Np. interpretacja lub konsultacja księgowa"></label><label>Obowiązuje od<input id="softwareProfileValidFrom" type="month"></label><label>Obowiązuje do<input id="softwareProfileValidTo" type="month"></label></div>
+                <label class="verification-confirm"><input id="softwareProfileConfirmed" type="checkbox"><span>Potwierdzam klasyfikację i stawkę dla tej działalności.</span></label>
+              </article>
+              <article class="profile-verification-card" id="consultingProfileCard">
+                <div class="profile-verification-top"><div><span class="profile-icon">?</span><div><strong>Usługi konsultingowe</strong><small>Kategoria „Konsulting” na fakturach</small></div></div><span class="status-pill warning" id="consultingProfileStatus">Uzupełnij raz</span></div>
+                <div class="verification-form-grid"><label>PKWiU<input id="consultingProfilePkwiu" placeholder="Potwierdzona klasyfikacja"></label><label>Stawka ryczałtu<div class="input-suffix"><input id="consultingProfileRate" type="number" min="0" step="0.1"><span>%</span></div></label><label class="span-2">Źródło potwierdzenia<input id="consultingProfileLegalBasis" placeholder="Np. interpretacja lub konsultacja księgowa"></label><label>Obowiązuje od<input id="consultingProfileValidFrom" type="month"></label><label>Obowiązuje do<input id="consultingProfileValidTo" type="month"></label></div>
+                <label class="verification-confirm"><input id="consultingProfileConfirmed" type="checkbox"><span>Potwierdzam klasyfikację i stawkę dla tej działalności.</span></label>
+              </article>
+            </div>
+          </div>
           <div class="settings-separator"></div>
           <div class="settings-section ksef-settings">
             <div>
@@ -374,7 +389,7 @@
               <p class="ksef-hint">Synchronizacja pobiera metadane faktur sprzedażowych i kosztowych z ostatnich 30 dni, a później działa przyrostowo.</p>
             </div>
           </div>
-          <div class="settings-actions"><button class="primary-button" id="saveSettings">Zapisz ustawienia</button></div>
+          <div class="settings-actions profile-save-actions"><span id="profileSaveHint">Zmiany zaczną obowiązywać po zapisaniu profilu.</span><button class="primary-button" id="saveCategoryProfiles">Zapisz cały profil</button></div>
         </article>
       </section>
     </main>
@@ -382,8 +397,9 @@
 
   <div class="modal-backdrop" id="invoiceModal" aria-hidden="true">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="invoiceModalTitle">
-      <div class="modal-header"><div><p class="eyebrow">Nowy dokument</p><h2 id="invoiceModalTitle">Dodaj fakturę</h2></div><button class="icon-button modal-close" aria-label="Zamknij">×</button></div>
+      <div class="modal-header"><div><p class="eyebrow" id="invoiceModalEyebrow">Nowy dokument</p><h2 id="invoiceModalTitle">Dodaj fakturę</h2></div><button class="icon-button modal-close" aria-label="Zamknij">×</button></div>
       <form id="invoiceForm">
+        <p class="invoice-edit-hint" id="invoiceEditHint" hidden></p>
         <div class="type-switch"><label><input type="radio" name="invoiceType" value="sale" checked><span>Sprzedaż</span></label><label><input type="radio" name="invoiceType" value="cost"><span>Koszt</span></label></div>
         <div class="form-grid modal-grid">
           <label>Numer faktury<input name="number" required placeholder="np. FV/07/2026/01"></label>
@@ -391,13 +407,13 @@
           <label>Rodzaj dokumentu<select name="documentType"><option value="invoice">Faktura</option><option value="correction">Faktura korygująca</option></select></label>
           <label><span id="vatEffectiveDateText">Data sprzedaży / wykonania usługi</span><input name="vatEffectiveDate" type="date" required></label>
           <label>Kontrahent<input name="contractor" required placeholder="Nazwa firmy"></label>
-          <label>NIP kontrahenta<input name="contractorNip" inputmode="numeric" maxlength="10" required placeholder="10 cyfr"></label>
+          <label>NIP kontrahenta<input name="contractorNip" inputmode="numeric" maxlength="10" placeholder="10 cyfr — możesz uzupełnić później"></label>
           <label>Kwota netto<input name="net" type="number" step="0.01" required placeholder="0,00"></label>
           <label>Stawka / kod VAT<select name="vat"><option value="23">23%</option><option value="8">8%</option><option value="5">5%</option><option value="0">0%</option><option value="ZW">ZW</option><option value="NP">NP</option></select></label>
-          <label class="span-2 vat-deduction-field" style="display:none">VAT podlegający odliczeniu<select name="vatDeductionPercent"><option value="100">100% — pełne odliczenie</option><option value="50">50% — częściowe odliczenie</option><option value="0">0% — bez odliczenia</option></select></label>
+          <label class="span-2 vat-deduction-field" style="display:none">VAT podlegający odliczeniu<select name="vatDeductionPercent"><option value="100">100% — pełne odliczenie</option><option value="50">50% — częściowe odliczenie</option><option value="0">0% — bez odliczenia</option></select><button type="button" class="assistant-link inline-assistant" data-assistant-topic="vat">Jak wybrać zakres odliczenia?</button></label>
           <label class="span-2 rate-field">Rodzaj usługi / stawka ryczałtu<select name="category"><option value="software">Usługi programistyczne</option><option value="consulting">Usługi konsultingowe</option></select></label>
         </div>
-        <div class="modal-actions"><button type="button" class="secondary-button modal-close">Anuluj</button><button type="submit" class="primary-button">Dodaj do rozliczenia</button></div>
+        <div class="modal-actions"><button type="button" class="secondary-button modal-close">Anuluj</button><button type="submit" class="primary-button" id="invoiceSubmitButton">Dodaj do rozliczenia</button></div>
       </form>
     </div>
   </div>
@@ -427,6 +443,45 @@
       </form>
     </div>
   </div>
+
+  <div class="modal-backdrop onboarding-backdrop" id="onboardingModal" aria-hidden="true">
+    <div class="modal onboarding-modal" role="dialog" aria-modal="true" aria-labelledby="onboardingTitle">
+      <div class="onboarding-header">
+        <div><p class="eyebrow">Pierwsze uruchomienie</p><h2 id="onboardingTitle">Skonfiguruj działalność</h2></div>
+        <button type="button" class="text-button" id="onboardingLater">Dokończę później</button>
+      </div>
+      <div class="onboarding-progress" aria-label="Postęp konfiguracji"><span class="active"></span><span></span><span></span><span></span></div>
+      <form id="onboardingForm">
+        <section class="onboarding-step active" data-onboarding-step="0">
+          <span class="onboarding-step-number">Krok 1 z 4</span><h3>Podaj podstawowe dane</h3><p>Dzięki nim przygotujemy profil i dokumenty. Możesz je później zmienić.</p>
+          <div class="form-grid"><label>Nazwa firmy<input name="onboardingCompany" required placeholder="Np. Studio Projektowe Anna Kowalska"></label><label>NIP<input name="onboardingNip" inputmode="numeric" maxlength="10" required placeholder="10 cyfr"></label><label>Imię właściciela<input name="onboardingFirstName" autocomplete="given-name"></label><label>Nazwisko właściciela<input name="onboardingLastName" autocomplete="family-name"></label></div>
+        </section>
+        <section class="onboarding-step" data-onboarding-step="1">
+          <span class="onboarding-step-number">Krok 2 z 4</span><h3>Sprawdź wariant rozliczeń</h3><p>Ta wersja prototypu liczy miesięczny ryczałt, VAT i standardowy ZUS. Nie wybieraj tego wariantu bez potwierdzenia, że odpowiada Twojej działalności.</p>
+          <div class="onboarding-choice"><strong>Ryczałt + czynny VAT + standardowy ZUS</strong><span>Obsługiwany wariant prototypu</span></div>
+          <button type="button" class="assistant-link" data-assistant-topic="taxation">Wyjaśnij mi formy opodatkowania</button>
+          <label class="verification-confirm"><input name="onboardingTaxConfirmed" type="checkbox"><span>Rozumiem, że prototyp nie wybiera formy opodatkowania za mnie.</span></label>
+        </section>
+        <section class="onboarding-step" data-onboarding-step="2">
+          <span class="onboarding-step-number">Krok 3 z 4</span><h3>Określ rodzaj usług</h3><p>Klasyfikacja PKWiU wpływa na stawkę ryczałtu. Możesz pominąć ten krok, ale rozliczenie pozostanie oznaczone jako wymagające weryfikacji.</p>
+          <label>Główna kategoria usług<select name="onboardingCategory"><option value="software">Usługi programistyczne</option><option value="consulting">Usługi konsultingowe</option></select></label>
+          <label>Potwierdzone PKWiU (opcjonalnie)<input name="onboardingPkwiu" placeholder="Np. 62.01.11.0"></label>
+          <button type="button" class="assistant-link" data-assistant-topic="pkwiu">Jak potwierdzić PKWiU?</button>
+        </section>
+        <section class="onboarding-step" data-onboarding-step="3">
+          <span class="onboarding-step-number">Krok 4 z 4</span><h3>Profil jest gotowy do uzupełnienia</h3><p>Po zapisaniu Podsumowanie pokaże Ci krok po kroku, czego brakuje w bieżącym miesiącu.</p>
+          <ol class="monthly-flow"><li>Na Podsumowaniu sprawdź, co wymaga uwagi</li><li>Dodaj lub pobierz faktury</li><li>Uzupełnij wskazane informacje</li><li>Przygotuj deklaracje i płatności</li></ol>
+        </section>
+        <div class="modal-actions onboarding-actions"><button type="button" class="secondary-button" id="onboardingBack" disabled>Wstecz</button><button type="button" class="primary-button" id="onboardingNext">Dalej</button><button type="submit" class="primary-button" id="onboardingFinish" hidden>Zapisz i przejdź do profilu</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="assistant-panel" id="assistantPanel" aria-hidden="true">
+    <div class="assistant-panel-header"><div><span class="assistant-mark">AI</span><div><strong>Asystent Pewnika</strong><small>Pomoc edukacyjna, nie porada podatkowa</small></div></div><button type="button" class="icon-button" id="closeAssistant" aria-label="Zamknij asystenta">×</button></div>
+    <div class="assistant-content"><p class="eyebrow" id="assistantEyebrow">Pomoc kontekstowa</p><h2 id="assistantTitle">W czym mogę pomóc?</h2><div class="assistant-answer" id="assistantAnswer">Wybierz temat, a wyjaśnię go prostym językiem i wskażę, co warto potwierdzić.</div><div class="assistant-suggestions" id="assistantSuggestions"><button type="button" data-assistant-topic="taxation">Forma opodatkowania</button><button type="button" data-assistant-topic="pkwiu">PKWiU i ryczałt</button><button type="button" data-assistant-topic="vat">Odliczenie VAT</button><button type="button" data-assistant-topic="monthly">Co robić co miesiąc?</button></div><div class="assistant-safety"><strong>Zanim zapiszesz decyzję</strong><p>Sprawdź aktualność informacji w oficjalnym źródle lub skonsultuj sytuację z księgową. Asystent nie zmienia ustawień automatycznie.</p></div></div>
+  </div>
+  <div class="assistant-overlay" id="assistantOverlay" hidden></div>
 
   <div class="toast" id="toast"><span class="toast-icon">✓</span><span id="toastText">Zapisano</span></div>
   <script src="supabase-config.js"></script>

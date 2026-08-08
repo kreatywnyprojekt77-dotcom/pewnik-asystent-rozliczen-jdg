@@ -13,8 +13,8 @@ export const ZUS_RULES = Object.freeze({
     labourFunds: 245,
   }),
   healthTiers: Object.freeze([
-    Object.freeze({ code: "TO_60000", revenueToGrosz: 6000000, contributionGrosz: 49835 }),
-    Object.freeze({ code: "TO_300000", revenueToGrosz: 30000000, contributionGrosz: 83058 }),
-    Object.freeze({ code: "ABOVE_300000", revenueToGrosz: null, contributionGrosz: 149504 }),
+    Object.freeze({ code: "TO_60000", revenueToGrosz: 6000000, baseGrosz: 553718, contributionGrosz: 49835 }),
+    Object.freeze({ code: "TO_300000", revenueToGrosz: 30000000, baseGrosz: 922864, contributionGrosz: 83058 }),
+    Object.freeze({ code: "ABOVE_300000", revenueToGrosz: null, baseGrosz: 1661155, contributionGrosz: 149504 }),
   ]),
 });

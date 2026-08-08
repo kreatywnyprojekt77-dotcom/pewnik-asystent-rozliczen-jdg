@@ -1,6 +1,7 @@
 import { generateMonthlySummary } from './monthly-summary.mjs';
 import { prepareInvoice } from './invoice-input.mjs';
-import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml } from './declarations.mjs';
+import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduXml } from './declarations.mjs';
+import { validateDeclarationXml } from './declaration-validation.mjs';
 
 (function () {
   'use strict';
@@ -55,10 +56,11 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     vatSettings: { byPeriod: {} },
     zusSettings: { sicknessInsurance: true, byPeriod: {} },
     tasks: { transfers: false, jpk: false, archive: false },
+    onboardingCompleted: false,
     company: { name: 'DEMO — Studio Testowe (dane syntetyczne)', nip: '0000000000' },
     declarationProfile: {
       firstName: '', lastName: '', birthDate: '', pesel: '', regon: '',
-      taxOfficeCode: '', email: '', phone: '', zusInsuranceTitleCode: '051000'
+      taxOfficeCode: '', email: '', phone: '', zusShortName: '', zusInsuranceTitleCode: '051000'
     }
   };
 
@@ -72,12 +74,18 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     vatSettings: Object.assign({}, initialState.vatSettings, loaded.vatSettings || {}),
     zusSettings: Object.assign({}, initialState.zusSettings, loaded.zusSettings || {}),
     tasks: Object.assign({}, initialState.tasks, loaded.tasks || {}),
+    onboardingCompleted: loaded.onboardingCompleted === true || Boolean(loaded.company && loaded.company.nip && loaded.company.nip !== '0000000000'),
     company: Object.assign({}, initialState.company, loaded.company || {}),
     declarationProfile: Object.assign({}, initialState.declarationProfile, loaded.declarationProfile || {})
   };
 
   let toastTimer;
   let currentDeclarationKind = 'jpk';
+  let declarationValidationRun = 0;
+  let onboardingStep = 0;
+  let editingInvoiceId = null;
+  let currentViewName = 'dashboard';
+  const navigationStack = [];
 
   function loadState() {
     try {
@@ -125,6 +133,7 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     state.vatSettings = Object.assign({}, initialState.vatSettings, nextState.vatSettings || {});
     state.zusSettings = Object.assign({}, initialState.zusSettings, nextState.zusSettings || {});
     state.tasks = Object.assign({}, initialState.tasks, nextState.tasks || {});
+    state.onboardingCompleted = nextState.onboardingCompleted === true || Boolean(nextState.company && nextState.company.nip && nextState.company.nip !== '0000000000');
     state.company = Object.assign({}, initialState.company, nextState.company || {});
     state.declarationProfile = Object.assign({}, initialState.declarationProfile, nextState.declarationProfile || {});
     try {
@@ -139,6 +148,7 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     fillDeclarationProfile();
     renderTasks();
     renderCalculations();
+    refreshOnboarding();
   }
 
   function money(value, currency = 'PLN') {
@@ -294,6 +304,7 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
       taxOfficeCode: value('taxOfficeCode').replace(/\D/g, ''),
       email: value('email'),
       phone: value('phone').replace(/[^\d+]/g, ''),
+      zusShortName: value('zusShortName'),
       zusInsuranceTitleCode: value('zusInsuranceTitleCode').replace(/\D/g, '')
     };
   }
@@ -305,8 +316,66 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     ).join('') + (documentData.findings.length > 4 ? '<li>oraz ' + (documentData.findings.length - 4) + ' kolejnych uwag</li>' : '') + '</ul>';
   }
 
+  function declarationXml(kind, documentData) {
+    if (kind === 'jpk') return generateJpkV7mXml(documentData);
+    if (kind === 'zus') return generateZusDraKeduXml(documentData);
+    throw new TypeError('Ten dokument nie ma urzędowego pliku XML.');
+  }
+
+  async function validateDeclarationCards(bundle) {
+    const run = ++declarationValidationRun;
+    await Promise.all(['jpk', 'zus'].map(async kind => {
+      const documentData = bundle.documents[kind];
+      if (documentData.status !== 'READY') return;
+      const badge = document.getElementById('declarationStatus-' + kind);
+      const buttons = document.querySelectorAll('[data-declaration-xml="' + kind + '"]');
+      if (badge) {
+        badge.textContent = 'Sprawdzanie XSD…';
+        badge.className = 'status-pill warning';
+      }
+      buttons.forEach(button => { button.disabled = true; });
+      try {
+        const result = await validateDeclarationXml(kind, declarationXml(kind, documentData));
+        if (run !== declarationValidationRun) return;
+        if (result.valid) {
+          if (badge) {
+            badge.textContent = 'Gotowy do pobrania';
+            badge.className = 'status-pill success';
+          }
+          buttons.forEach(button => { button.disabled = false; });
+        } else {
+          if (badge) {
+            badge.textContent = 'Błąd formatu XML';
+            badge.className = 'status-pill error';
+          }
+          const findings = document.getElementById('declarationFindings-' + kind);
+          if (findings) findings.innerHTML = '<ul class="declaration-findings"><li class="error">Dokument nie przeszedł oficjalnej walidacji XSD.</li><li>' + escapeHtml(result.errors[0]?.message || 'Sprawdź strukturę XML.') + '</li></ul>';
+        }
+      } catch (error) {
+        if (run !== declarationValidationRun) return;
+        if (badge) {
+          badge.textContent = 'Nie można sprawdzić XSD';
+          badge.className = 'status-pill error';
+        }
+        const findings = document.getElementById('declarationFindings-' + kind);
+        if (findings) findings.innerHTML = '<ul class="declaration-findings"><li class="error">' + escapeHtml(error.message) + '</li></ul>';
+      }
+    }));
+  }
+
   function renderDeclarations() {
     const bundle = declarationBundle();
+    const profileFields = state.declarationProfile;
+    const profileComplete = Boolean(
+      state.company.name && /^\d{10}$/.test(state.company.nip || '') &&
+      profileFields.firstName && profileFields.lastName && /^\d{4}-\d{2}-\d{2}$/.test(profileFields.birthDate || '') &&
+      /^\d{11}$/.test(profileFields.pesel || '') && /^\d{9}$/.test(profileFields.regon || '') &&
+      /^\d{4}$/.test(profileFields.taxOfficeCode || '') && profileFields.zusShortName &&
+      /^\d{6}$/.test(profileFields.zusInsuranceTitleCode || '')
+    );
+    setText('declarationProfileSummary', profileComplete
+      ? 'Profil firmy i właściciela jest uzupełniony. Dokumenty poniżej korzystają z tych danych.'
+      : 'Brakuje części danych firmy lub właściciela. Uzupełnij Profil działalności przed pobraniem dokumentów.');
     const amounts = {
       ryczalt: bundle.documents.ryczalt.amountDueGrosz,
       jpk: bundle.documents.jpk.taxDueGrosz,
@@ -323,9 +392,10 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
       const findings = document.getElementById('declarationFindings-' + kind);
       if (findings) findings.innerHTML = declarationFindingsHtml(documentData);
       document.querySelectorAll('[data-declaration-xml="' + kind + '"]').forEach(button => {
-        button.disabled = kind === 'jpk' ? documentData.status !== 'READY' : documentData.status === 'BLOCKED';
+        button.disabled = documentData.status !== 'READY';
       });
     });
+    void validateDeclarationCards(bundle);
   }
 
   function downloadTextFile(content, fileName, type) {
@@ -403,7 +473,7 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     return {
       pageSize: 'A4',
       pageMargins: [45, 45, 45, 45],
-      content: [...heading, identity, ...details, ...findings, { text: 'Wersja robocza do sprawdzenia. Plikiem do elektronicznego przekazania jest właściwy XML.', color: '#8992a0', fontSize: 8, margin: [0, 28, 0, 0] }],
+      content: [...heading, identity, ...details, ...findings, { text: 'Ten PDF jest czytelnym podglądem. Plikiem przeznaczonym do ręcznego importu w narzędziu urzędowym jest XML zweryfikowany schematem XSD.', color: '#8992a0', fontSize: 8, margin: [0, 28, 0, 0] }],
       styles: { section: { bold: true, fontSize: 11, color: '#172033' } },
       defaultStyle: { font: 'Roboto', color: '#172033', fontSize: 10 }
     };
@@ -419,16 +489,18 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     showToast('Przygotowano podgląd PDF.');
   }
 
-  function downloadDeclarationXml(kind) {
+  async function downloadDeclarationXml(kind) {
     const documentData = declarationBundle().documents[kind];
     try {
-      if (kind === 'jpk') {
-        downloadTextFile(generateJpkV7mXml(documentData), 'JPK_V7M_' + documentData.period + '.xml', 'application/xml;charset=utf-8');
-        showToast('Pobrano plik JPK_V7M XML.');
-      } else if (kind === 'zus') {
-        downloadTextFile(generateZusDraKeduDraftXml(documentData), 'ZUS_DRA_' + documentData.period + '_WERSJA_TECHNICZNA.xml', 'application/xml;charset=utf-8');
-        showToast('Pobrano techniczną wersję XML ZUS DRA.', 'info');
-      }
+      const xml = declarationXml(kind, documentData);
+      showToast('Sprawdzamy dokument z oficjalnym schematem XSD…', 'info');
+      const validation = await validateDeclarationXml(kind, xml);
+      if (!validation.valid) throw new Error('Dokument nie przeszedł walidacji XSD: ' + (validation.errors[0]?.message || 'nieznany błąd struktury.'));
+      const fileName = kind === 'jpk'
+        ? 'JPK_V7M_' + documentData.period + '.xml'
+        : 'KEDU_ZUS_DRA_' + documentData.period + '.xml';
+      downloadTextFile(xml, fileName, 'application/xml;charset=utf-8');
+      showToast(kind === 'jpk' ? 'Pobrano zweryfikowany JPK_V7M XML.' : 'Pobrano zweryfikowany plik KEDU z ZUS DRA.');
     } catch (error) {
       showToast(error.message, 'error');
     }
@@ -453,8 +525,8 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     setText('declarationTitle', documentData.title);
     document.getElementById('declarationPreviewContent').innerHTML = declarationPreviewHtml(kind, documentData);
     document.getElementById('downloadDeclarationXml').hidden = kind === 'ryczalt';
-    document.getElementById('downloadDeclarationXml').disabled = kind === 'jpk' ? documentData.status !== 'READY' : documentData.status === 'BLOCKED';
-    document.getElementById('downloadDeclarationXml').textContent = kind === 'zus' ? 'Pobierz techniczny XML' : 'Pobierz XML';
+    document.getElementById('downloadDeclarationXml').disabled = documentData.status !== 'READY';
+    document.getElementById('downloadDeclarationXml').textContent = kind === 'zus' ? 'Pobierz KEDU XML' : 'Pobierz XML';
     openModal('declarationModal');
   }
 
@@ -486,7 +558,31 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     setText('vatDeadline', formatDate(vatDeadline));
     setText('jpkDeadline', formatDate(vatDeadline, false));
     setText('nearestDeadline', formatDate(pitDeadline, false));
+    setText('pitDaysLeft', deadlineDistance(pitDeadline));
+    setText('zusDaysLeft', deadlineDistance(zusDeadline));
+    setText('vatDaysLeft', deadlineDistance(vatDeadline));
+    setCalendarDate('pit', pitDeadline);
+    setCalendarDate('zus', zusDeadline);
+    setCalendarDate('vat', vatDeadline);
     setText('documentPeriod', String(period.getMonth() + 1).padStart(2, '0') + ' / ' + period.getFullYear());
+  }
+
+  function setCalendarDate(prefix, date) {
+    setText(prefix + 'CalendarDay', String(date.getDate()));
+    setText(prefix + 'CalendarMonth', new Intl.DateTimeFormat('pl-PL', { month: 'long' }).format(date));
+  }
+
+  function deadlineDistance(deadline) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const target = new Date(deadline);
+    target.setHours(0, 0, 0, 0);
+    const days = Math.round((target - today) / 86400000);
+    if (days === 0) return 'dzisiaj';
+    if (days === 1) return 'jutro';
+    if (days > 1) return 'za ' + days + ' dni';
+    if (days === -1) return '1 dzień po terminie';
+    return Math.abs(days) + ' dni po terminie';
   }
 
   function renderCalculations() {
@@ -508,7 +604,6 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     const invalidOverall = calc.status === 'INVALID';
     const reviewOverall = calc.status === 'REVIEW_REQUIRED';
     setText('grandTotal', total == null ? '—' : money(total));
-    setText('settlementTotal', total == null ? '—' : money(total));
     setText('pitAmount', pit == null ? '—' : money(pit));
     setText('vatAmount', invalidVat || vat == null ? '—' : money(vat));
     setText('zusAmount', invalidZus || zus == null ? '—' : money(zus));
@@ -522,22 +617,29 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     setText('documentInvoiceCount', vatDocumentCount + ' ' + plural(vatDocumentCount, 'pozycja ewidencji', 'pozycje ewidencji', 'pozycji ewidencji'));
 
     const pitStatus = document.getElementById('pitStatus');
-    pitStatus.textContent = invalidPit ? 'Błąd danych' : (reviewPit ? 'Do weryfikacji' : 'Do zapłaty');
+    pitStatus.textContent = invalidPit ? 'Popraw dane' : (reviewPit ? 'Wymaga uwagi' : (pit === 0 ? 'Brak wpłaty' : 'Do zapłaty'));
     pitStatus.className = 'status-pill ' + (invalidPit ? 'error' : (reviewPit ? 'warning' : 'neutral'));
     const vatStatus = document.getElementById('vatStatus');
-    vatStatus.textContent = vatResult.status === 'VERIFIED' ? (vatResult.excessGrosz > 0 ? 'Nadwyżka' : 'Do zapłaty') : (vatResult.status === 'INVALID' ? 'Błąd danych' : 'Do weryfikacji');
+    vatStatus.textContent = vatResult.status === 'VERIFIED' ? (vatResult.excessGrosz > 0 ? 'Nadwyżka' : (vat === 0 ? 'Brak wpłaty · wyślij JPK' : 'Do zapłaty')) : (vatResult.status === 'INVALID' ? 'Popraw dane' : 'Wymaga uwagi');
     vatStatus.className = 'status-pill ' + (vatResult.status === 'VERIFIED' ? 'neutral' : (vatResult.status === 'INVALID' ? 'error' : 'warning'));
     const zusStatus = document.getElementById('zusStatus');
-    zusStatus.textContent = invalidZus ? 'Błąd danych' : (reviewZus ? 'Do weryfikacji' : 'Do zapłaty');
+    zusStatus.textContent = invalidZus ? 'Popraw dane' : (reviewZus ? 'Wymaga uwagi' : (zus === 0 ? 'Brak wpłaty' : 'Do zapłaty'));
     zusStatus.className = 'status-pill ' + (invalidZus ? 'error' : (reviewZus ? 'warning' : 'neutral'));
-    setText('calculationReadinessTitle', invalidOverall ? 'Rozliczenie wymaga poprawy danych' : (reviewOverall ? 'Rozliczenie wymaga sprawdzenia' : 'Rozliczenie jest gotowe'));
-    setText('calculationReadinessDescription', invalidOverall ? 'Popraw dane wskazane w Centrum weryfikacji przed przygotowaniem płatności.' : (reviewOverall ? 'Przejdź przez krótką listę zadań i potwierdź brakujące informacje.' : 'Nie znaleźliśmy braków ani sytuacji wymagających uwagi.'));
+    setText('calculationReadinessTitle', invalidOverall ? 'Rozliczenie wymaga poprawy danych' : (reviewOverall ? 'Rozliczenie wymaga sprawdzenia' : 'Kwoty zostały obliczone'));
+    setText('calculationReadinessDescription', invalidOverall ? 'Poniżej pokazujemy, co trzeba uzupełnić przed przygotowaniem płatności.' : (reviewOverall ? 'Poniżej znajdziesz krótką listę zadań i brakujących informacji.' : 'Nie znaleźliśmy braków technicznych. Sprawdź podsumowanie przed wysłaniem dokumentów i płatnością.'));
     const overallStatus = document.getElementById('overallCalculationStatus');
-    overallStatus.textContent = invalidOverall ? 'Błąd' : (reviewOverall ? 'Do weryfikacji' : 'Gotowe');
-    overallStatus.className = 'status-pill ' + (invalidOverall ? 'error' : (reviewOverall ? 'warning' : 'success'));
-    document.querySelector('.ready-banner').classList.toggle('warning', invalidOverall || reviewOverall);
+    overallStatus.textContent = invalidOverall ? 'Błąd' : (reviewOverall ? 'Do weryfikacji' : 'Obliczone');
+    overallStatus.className = 'status-pill ' + (invalidOverall ? 'error' : 'warning');
+    document.querySelector('.ready-banner').classList.toggle('warning', true);
     document.querySelector('[data-task="transfers"]').disabled = !calc.payment.canCreateTransfers;
     document.querySelector('[data-task="jpk"]').disabled = invalidVat;
+    const positivePayments = [pit, vat, zus].filter(value => Number.isFinite(value) && value > 0).length;
+    setText('obligationCount', positivePayments + ' ' + plural(positivePayments, 'kwota do zapłaty', 'kwoty do zapłaty', 'kwot do zapłaty'));
+    setText('transferTaskTitle', positivePayments ? 'Wykonaj ' + positivePayments + ' ' + plural(positivePayments, 'przelew', 'przelewy', 'przelewów') : 'Brak przelewów podatkowych');
+    setText('transferTaskHelp', positivePayments ? 'Pokażemy dane tylko dla kwot większych od zera.' : 'Nadal sprawdź, czy trzeba wysłać JPK_V7M.');
+    setText('pitCalendarResult', invalidPit || pit == null ? 'Najpierw popraw dane' : (pit > 0 ? money(pit) + ' do zapłaty' : 'Brak wpłaty'));
+    setText('zusCalendarResult', invalidZus || zus == null ? 'Najpierw popraw dane' : (zus > 0 ? money(zus) + ' do zapłaty' : 'Brak wpłaty'));
+    setText('vatCalendarResult', invalidVat || vat == null ? 'Najpierw popraw dane' : (vat > 0 ? money(vat) + ' do zapłaty + JPK' : 'Brak wpłaty · JPK wymagany'));
 
     const pitCategoryRows = pitResult.categoryRows.filter(row => row.currentRevenueGrosz > 0).map(row => {
       const base = row.taxableBaseBeforeRoundingGrosz == null ? '—' : money(row.taxableBaseBeforeRoundingGrosz / 100);
@@ -578,6 +680,7 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     renderInvoices();
     renderVerification(calc);
     renderDeclarations();
+    renderPeriodHistory();
   }
 
   function findingSummary(findings, area) {
@@ -590,14 +693,14 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
       grouped.set(key, current);
     });
     const actionText = area === 'pit'
-      ? 'Otwórz Centrum weryfikacji, aby uzupełnić stały profil kategorii lub dane tego miesiąca.'
+      ? 'Sprawdź poniżej profil kategorii lub dane tego miesiąca.'
       : (area === 'zus'
         ? 'Sprawdź profil ZUS i przychód narastający wykorzystany do obliczeń.'
-        : 'Otwórz Centrum weryfikacji, aby sprawdzić dokumenty i decyzje dotyczące VAT.');
+        : 'Sprawdź faktury i decyzje dotyczące VAT.');
     const rows = [...grouped.values()].map(({ item, count }) =>
       '<div class="technical-finding"><strong>' + escapeHtml(item.code) + (count > 1 ? ' × ' + count : '') + '</strong><span>' + escapeHtml(item.message) + '</span></div>'
     ).join('');
-    return '<div class="verification-prompt"><strong>Wymaga Twojej uwagi</strong><span>' + actionText + '</span><button type="button" class="text-button" data-view-target="verification">Przejdź do weryfikacji →</button></div>' +
+    return '<div class="verification-prompt"><strong>Wymaga Twojej uwagi</strong><span>' + actionText + '</span><button type="button" class="text-button" data-scroll-target="dashboardVerificationPanel">Zobacz, co zrobić →</button></div>' +
       '<details class="technical-findings"><summary>Szczegóły techniczne (' + findings.length + ')</summary>' + rows + '</details>';
   }
 
@@ -623,23 +726,48 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     const noSalesConfirmed = Boolean(ryczaltSettingsForPeriod().noSalesConfirmed);
     const salesReady = currentSales.length > 0 || noSalesConfirmed;
     const incompleteProfiles = Object.keys(defaultCategoryProfiles).filter(id => !isCategoryProfileComplete(id));
+    const declarationProfile = state.declarationProfile || {};
+    const identityProfileReady = Boolean(
+      state.company.name && /^\d{10}$/.test(state.company.nip || '') && state.company.nip !== '0000000000' &&
+      declarationProfile.firstName && declarationProfile.lastName && /^\d{4}-\d{2}-\d{2}$/.test(declarationProfile.birthDate || '') &&
+      /^\d{11}$/.test((declarationProfile.pesel || '').replace(/\D/g, '')) &&
+      /^\d{9}$/.test((declarationProfile.regon || '').replace(/\D/g, '')) &&
+      declarationProfile.zusShortName && declarationProfile.zusShortName.length <= 31 &&
+      /^\d{4}$/.test(declarationProfile.taxOfficeCode || '') &&
+      /^\d{6}$/.test((declarationProfile.zusInsuranceTitleCode || '').replace(/\D/g, ''))
+    );
+    const profileReady = identityProfileReady && incompleteProfiles.length === 0;
     const deductionGrosz = ryczaltSettingsForPeriod().deductionGrosz;
     const deductionBlocked = calc.components.ryczalt.result.findings.some(item =>
       item.code === 'DEDUCTION_EXCEEDS_CATEGORY_REVENUE' || item.code === 'DEDUCTION_WITHOUT_REVENUE'
     );
     const vatNeedsReview = calc.components.vat.status !== 'VERIFIED';
-    const taskCount = incompleteProfiles.length + (salesReady ? 0 : 1) + (deductionBlocked ? 1 : 0) + (vatNeedsReview ? 1 : 0);
+    const taskCount = (profileReady ? 0 : 1) + (salesReady ? 0 : 1) + (deductionBlocked ? 1 : 0) + (vatNeedsReview ? 1 : 0);
 
-    setText('verificationCountBadge', taskCount);
     setText('verificationOpenCount', taskCount);
-    setText('verificationPeriodName', periodName());
+    setText('verificationOpenLabel', plural(taskCount, 'rzecz do zrobienia', 'rzeczy do zrobienia', 'rzeczy do zrobienia'));
+    setText('dashboardVerificationTitle', taskCount ? 'Dokończ rozliczenie krok po kroku' : 'Wszystkie podstawowe informacje są sprawdzone');
     setText('verificationSalesCount', currentSales.length + ' ' + plural(currentSales.length, 'faktura sprzedażowa', 'faktury sprzedażowe', 'faktur sprzedażowych'));
     setText('verificationDeductionValue', money(deductionGrosz / 100));
     setText('verificationVatStatus', vatNeedsReview ? 'Wymaga sprawdzenia' : 'Gotowe');
+    setText('verificationProfileStatus', profileReady ? 'Profil kompletny' : 'Brakuje danych potrzebnych do deklaracji');
+    setText('verificationProfileHelp', profileReady
+      ? 'Dane firmy, właściciela i rodzajów usług są gotowe do użycia.'
+      : (!identityProfileReady && incompleteProfiles.length
+        ? 'Uzupełnij dane firmy i właściciela oraz potwierdź stawki dla swoich usług.'
+        : (!identityProfileReady
+          ? 'Uzupełnij dane firmy i właściciela potrzebne do JPK_V7M i ZUS DRA.'
+          : 'Potwierdź PKWiU, stawkę i źródło dla używanych rodzajów usług.')));
 
     const overall = document.getElementById('verificationOverallStatus');
-    overall.textContent = taskCount ? 'Do weryfikacji' : 'Gotowe';
+    overall.textContent = taskCount ? 'Wymaga uwagi' : 'Wszystko sprawdzone';
     overall.className = 'status-pill ' + (taskCount ? 'warning' : 'success');
+    document.getElementById('dashboardVerificationPanel').classList.toggle('complete', taskCount === 0);
+    document.getElementById('readinessAction').hidden = taskCount === 0;
+
+    const profileTask = document.getElementById('verificationProfileTask');
+    profileTask.classList.toggle('complete', profileReady);
+    profileTask.classList.toggle('attention', !profileReady);
 
     const salesTask = document.getElementById('verificationSalesTask');
     salesTask.classList.toggle('complete', salesReady);
@@ -681,11 +809,27 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     const tbody = document.getElementById('invoiceTableBody');
     const query = (document.getElementById('invoiceSearch').value || '').trim().toLowerCase();
     const filter = document.getElementById('invoiceFilter').value;
+    const periodFilter = document.getElementById('invoicePeriodFilter').value;
+    const selectedPeriod = state.period.slice(0, 7);
     const filtered = state.invoices.filter(invoice => {
       const matchesQuery = invoice.number.toLowerCase().includes(query) || invoice.contractor.toLowerCase().includes(query);
-      const matchesFilter = filter === 'all' || invoice.type === filter;
-      return matchesQuery && matchesFilter;
+      const matchesFilter = filter === 'all' || invoice.type === filter || (filter === 'review' && invoiceNeedsReview(invoice));
+      const matchesPeriod = periodFilter === 'all' || invoicePeriod(invoice) === selectedPeriod;
+      return matchesQuery && matchesFilter && matchesPeriod;
     });
+
+    const currentPeriodInvoices = state.invoices.filter(invoice => invoicePeriod(invoice) === selectedPeriod);
+    const attentionCount = currentPeriodInvoices.filter(invoiceNeedsReview).length;
+    setText('invoiceAttentionCount', attentionCount);
+    setText('invoiceAttentionTitle', attentionCount
+      ? attentionCount + ' ' + plural(attentionCount, 'faktura wymaga uwagi', 'faktury wymagają uwagi', 'faktur wymaga uwagi')
+      : 'Wszystkie faktury są sprawdzone');
+    setText('invoiceAttentionText', attentionCount
+      ? 'Uzupełnij NIP, rodzaj usługi lub decyzję o odliczeniu VAT. Aplikacja wskaże brakujące pole w tabeli.'
+      : 'Dokumenty tego miesiąca mają komplet podstawowych informacji potrzebnych do obliczeń.');
+    const attentionBar = document.getElementById('invoiceAttentionBar');
+    attentionBar.classList.toggle('complete', attentionCount === 0);
+    document.getElementById('showReviewInvoices').hidden = attentionCount === 0;
 
     tbody.innerHTML = filtered.map(invoice => {
       const date = new Intl.DateTimeFormat('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(invoice.date + 'T12:00:00'));
@@ -699,9 +843,10 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
       const rateControl = invoice.type === 'sale'
         ? '<select class="rate-select" data-rate-invoice="' + invoice.id + '"><option value="" disabled ' + (!invoice.category ? 'selected' : '') + '>Przypisz stawkę</option><option value="software" ' + (invoice.category === 'software' ? 'selected' : '') + '>Programowanie · ' + number(state.rules.software) + '%</option><option value="consulting" ' + (invoice.category === 'consulting' ? 'selected' : '') + '>Konsulting · ' + number(state.rules.consulting) + '%</option></select>'
         : '<select class="rate-select" data-vat-deduction-invoice="' + invoice.id + '"><option value="" disabled ' + (invoice.vatDeductionPercent == null ? 'selected' : '') + '>Potwierdź odliczenie VAT</option><option value="100" ' + (Number(invoice.vatDeductionPercent) === 100 ? 'selected' : '') + '>VAT 100%</option><option value="50" ' + (Number(invoice.vatDeductionPercent) === 50 ? 'selected' : '') + '>VAT 50%</option><option value="0" ' + (Number(invoice.vatDeductionPercent) === 0 ? 'selected' : '') + '>VAT 0%</option></select>';
-      const deleteControl = invoice.source === 'ksef'
-        ? '<span class="ksef-origin" title="Dokument źródłowy pozostaje w KSeF">ŹRÓDŁO</span>'
-        : '<button class="icon-button delete-invoice" data-delete-invoice="' + invoice.id + '" aria-label="Usuń fakturę">×</button>';
+      const editLabel = invoiceNeedsReview(invoice) ? 'Uzupełnij' : 'Edytuj';
+      const deleteControl = '<div class="invoice-row-actions"><button type="button" class="text-button edit-invoice" data-edit-invoice="' + invoice.id + '">' + editLabel + '</button>' + (invoice.source === 'ksef'
+        ? '<span class="ksef-origin" title="Dane źródłowe pozostają w KSeF">KSeF</span>'
+        : '<button class="icon-button delete-invoice" data-delete-invoice="' + invoice.id + '" data-invoice-number="' + escapeHtml(invoice.number) + '" aria-label="Usuń fakturę ' + escapeHtml(invoice.number) + '">×</button>') + '</div>';
       return '<tr>' +
         '<td class="document-cell"><strong>' + escapeHtml(invoice.number) + origin + '</strong><small>' + date + '</small>' + ksefNumber + '</td>' +
         '<td class="contractor-cell"><strong>' + escapeHtml(invoice.contractor) + '</strong><label class="nip-inline">NIP <input value="' + escapeHtml(invoice.contractorNip || '') + '" data-contractor-nip-invoice="' + invoice.id + '" inputmode="numeric" maxlength="10" placeholder="uzupełnij"></label></td>' +
@@ -724,15 +869,51 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     })[character]);
   }
 
-  function showView(name) {
+  function updateBackNavigation() {
+    document.getElementById('backNavigation').hidden = navigationStack.length === 0;
+  }
+
+  function showView(name, options = {}) {
+    const view = document.getElementById(name + 'View');
+    if (!view) return;
+    if (!options.fromHistory && name !== currentViewName) navigationStack.push(currentViewName);
     document.querySelectorAll('.view').forEach(view => view.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
-    const view = document.getElementById(name + 'View');
     const nav = document.querySelector('.nav-item[data-view="' + name + '"]');
-    if (view) view.classList.add('active');
+    view.classList.add('active');
     if (nav) nav.classList.add('active');
+    currentViewName = name;
+    updateBackNavigation();
     document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('periodPicker').hidden = true;
+    closeAssistant();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function invoiceNeedsReview(invoice) {
+    if (!invoice) return false;
+    if (!invoice.contractorNip || !/^\d{10}$/.test(String(invoice.contractorNip).replace(/\D/g, ''))) return true;
+    if (invoice.type === 'sale') return !invoice.category;
+    return invoice.type === 'cost' && ![0, 50, 100].includes(Number(invoice.vatDeductionPercent));
+  }
+
+  function renderPeriodHistory() {
+    const container = document.getElementById('periodHistoryList');
+    if (!container) return;
+    const selected = state.period.slice(0, 7);
+    const periods = [...new Set([selected, ...state.invoices.map(invoicePeriod).filter(Boolean)])]
+      .sort((a, b) => b.localeCompare(a))
+      .slice(0, 6);
+    container.innerHTML = periods.map(period => {
+      const date = new Date(period + '-01T12:00:00');
+      const label = new Intl.DateTimeFormat('pl-PL', { month: 'long', year: 'numeric' }).format(date);
+      const count = state.invoices.filter(invoice => invoicePeriod(invoice) === period).length;
+      const isSelected = period === selected;
+      return '<button type="button" class="period-history-item' + (isSelected ? ' selected' : '') + '" data-period-value="' + period + '">' +
+        '<span class="period-history-status">' + (isSelected ? 'Wybrany miesiąc' : 'Dane zapisane') + '</span>' +
+        '<strong>' + escapeHtml(label.charAt(0).toUpperCase() + label.slice(1)) + '</strong>' +
+        '<small>' + count + ' ' + plural(count, 'dokument', 'dokumenty', 'dokumentów') + '</small></button>';
+    }).join('');
   }
 
   function showToast(message, type) {
@@ -862,6 +1043,91 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     setTextInput('companyNip', state.company.nip);
     setText('documentCompany', state.company.name);
     setText('documentNip', state.company.nip);
+    setText('dashboardGreeting', state.declarationProfile.firstName
+      ? 'Dzień dobry, ' + state.declarationProfile.firstName
+      : 'Twoje rozliczenie miesiąca');
+    const requiredValues = [
+      state.company.name && !state.company.name.startsWith('DEMO'),
+      /^\d{10}$/.test(state.company.nip || '') && state.company.nip !== '0000000000',
+      state.declarationProfile.firstName,
+      state.declarationProfile.lastName,
+      state.declarationProfile.taxOfficeCode,
+      isCategoryProfileComplete('software') || isCategoryProfileComplete('consulting')
+    ];
+    const completion = Math.round(requiredValues.filter(Boolean).length / requiredValues.length * 100);
+    setText('profileCompletion', completion + '%');
+  }
+
+  const assistantTopics = {
+    taxation: {
+      eyebrow: 'Wybór sposobu rozliczeń',
+      title: 'Forma opodatkowania zależy od Twojej sytuacji',
+      answer: '<p>Porównaj przede wszystkim poziom kosztów, rodzaj usług, przewidywany dochód i możliwość korzystania z ulg. Ten prototyp obsługuje tylko ryczałt, czynny VAT i standardowy ZUS — nie oznacza to, że ten wariant jest najlepszy dla Ciebie.</p><p><strong>Co przygotować:</strong> prognozę przychodów i kosztów, opis usług oraz informację o innych dochodach. Przed zmianą formy potwierdź wybór z księgową lub doradcą.</p><a href="https://www.podatki.gov.pl/pit/" target="_blank" rel="noreferrer">Sprawdź oficjalne informacje o PIT ↗</a>'
+    },
+    pkwiu: {
+      eyebrow: 'Klasyfikacja usług',
+      title: 'PKWiU opisuje rzeczywiście wykonywaną usługę',
+      answer: '<p>Nie wybieraj kodu wyłącznie na podstawie nazwy zawodu. Liczy się zakres czynności wykonywanych dla klienta, a podobnie brzmiące usługi mogą mieć inne stawki ryczałtu.</p><p><strong>Bezpieczna ścieżka:</strong> opisz usługę, sprawdź klasyfikację GUS, zapisz źródło i okres obowiązywania, a przy wątpliwości poproś o opinię księgowej lub interpretację.</p><a href="https://stat.gov.pl/Klasyfikacje/" target="_blank" rel="noreferrer">Klasyfikacje GUS ↗</a>'
+    },
+    vat: {
+      eyebrow: 'Faktura kosztowa',
+      title: 'Zakres odliczenia VAT wymaga decyzji',
+      answer: '<p><strong>100%</strong> zwykle oznacza zakup wykorzystywany wyłącznie w działalności opodatkowanej. <strong>50%</strong> bywa stosowane m.in. przy mieszanym użyciu niektórych pojazdów. <strong>0%</strong> wybierz, gdy VAT nie podlega odliczeniu.</p><p>To uproszczenie edukacyjne. Charakter wydatku, sposób wykorzystania i ograniczenia ustawowe mogą zmienić wynik.</p><a href="https://www.podatki.gov.pl/vat/" target="_blank" rel="noreferrer">Informacje o VAT ↗</a>'
+    },
+    monthly: {
+      eyebrow: 'Rutyna miesięczna',
+      title: 'Zamykaj miesiąc w tej samej kolejności',
+      answer: '<ol><li>Na Podsumowaniu sprawdź, co wymaga uwagi.</li><li>Dodaj lub pobierz wszystkie faktury.</li><li>Uzupełnij wskazane klasyfikacje i decyzje VAT.</li><li>Wróć do Podsumowania i sprawdź obliczone kwoty.</li><li>W Deklaracjach i płatnościach przygotuj dokumenty, wykonaj płatności i zachowaj potwierdzenia.</li></ol>'
+    }
+  };
+
+  function openAssistant(topic) {
+    const panel = document.getElementById('assistantPanel');
+    const overlay = document.getElementById('assistantOverlay');
+    const content = assistantTopics[topic];
+    if (content) {
+      setText('assistantEyebrow', content.eyebrow);
+      setText('assistantTitle', content.title);
+      document.getElementById('assistantAnswer').innerHTML = content.answer;
+    }
+    panel.classList.add('visible');
+    panel.setAttribute('aria-hidden', 'false');
+    overlay.hidden = false;
+  }
+
+  function closeAssistant() {
+    document.getElementById('assistantPanel').classList.remove('visible');
+    document.getElementById('assistantPanel').setAttribute('aria-hidden', 'true');
+    document.getElementById('assistantOverlay').hidden = true;
+  }
+
+  function updateOnboardingStep() {
+    document.querySelectorAll('.onboarding-step').forEach((step, index) => step.classList.toggle('active', index === onboardingStep));
+    document.querySelectorAll('.onboarding-progress span').forEach((step, index) => step.classList.toggle('active', index <= onboardingStep));
+    document.getElementById('onboardingBack').disabled = onboardingStep === 0;
+    document.getElementById('onboardingNext').hidden = onboardingStep === 3;
+    document.getElementById('onboardingFinish').hidden = onboardingStep !== 3;
+  }
+
+  function openOnboardingWizard() {
+    const form = document.getElementById('onboardingForm');
+    form.elements.onboardingCompany.value = state.company.name.startsWith('DEMO') ? '' : state.company.name;
+    form.elements.onboardingNip.value = state.company.nip === '0000000000' ? '' : state.company.nip;
+    form.elements.onboardingFirstName.value = state.declarationProfile.firstName;
+    form.elements.onboardingLastName.value = state.declarationProfile.lastName;
+    onboardingStep = 0;
+    updateOnboardingStep();
+    openModal('onboardingModal');
+  }
+
+  function refreshOnboarding() {
+    const modal = document.getElementById('onboardingModal');
+    if (state.onboardingCompleted) {
+      modal.classList.remove('visible');
+      modal.setAttribute('aria-hidden', 'true');
+      return;
+    }
+    openOnboardingWizard();
   }
 
   function formatKsefDate(value) {
@@ -939,12 +1205,91 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     event.preventDefault();
     showView(button.dataset.viewTarget);
   });
+  document.addEventListener('click', event => {
+    const button = event.target.closest('[data-scroll-target]');
+    if (!button) return;
+    event.preventDefault();
+    showView('dashboard');
+    const target = document.getElementById(button.dataset.scrollTarget);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
   document.querySelectorAll('[data-toast]').forEach(button => {
     button.addEventListener('click', event => {
       event.preventDefault();
       event.stopPropagation();
       showToast(button.dataset.toast, 'info');
     });
+  });
+  document.getElementById('openAssistant').addEventListener('click', () => openAssistant('monthly'));
+  document.getElementById('restartOnboarding').addEventListener('click', openOnboardingWizard);
+  document.getElementById('sidebarTutorial').addEventListener('click', openOnboardingWizard);
+  document.getElementById('backNavigation').addEventListener('click', () => {
+    const previousView = navigationStack.pop();
+    if (!previousView) return;
+    showView(previousView, { fromHistory: true });
+  });
+  document.getElementById('closeAssistant').addEventListener('click', closeAssistant);
+  document.getElementById('assistantOverlay').addEventListener('click', closeAssistant);
+  document.addEventListener('click', event => {
+    const button = event.target.closest('[data-assistant-topic]');
+    if (!button) return;
+    event.preventDefault();
+    openAssistant(button.dataset.assistantTopic);
+  });
+
+  document.getElementById('onboardingNext').addEventListener('click', () => {
+    const form = document.getElementById('onboardingForm');
+    if (onboardingStep === 0) {
+      const company = form.elements.onboardingCompany.value.trim();
+      const nip = form.elements.onboardingNip.value.replace(/\D/g, '');
+      if (!company || nip.length !== 10) {
+        showToast('Podaj nazwę firmy i 10 cyfr NIP, aby przejść dalej.', 'error');
+        return;
+      }
+    }
+    if (onboardingStep === 1 && !form.elements.onboardingTaxConfirmed.checked) {
+      showToast('Potwierdź, że rozumiesz ograniczenie prototypu.', 'info');
+      return;
+    }
+    onboardingStep = Math.min(3, onboardingStep + 1);
+    updateOnboardingStep();
+  });
+  document.getElementById('onboardingBack').addEventListener('click', () => {
+    onboardingStep = Math.max(0, onboardingStep - 1);
+    updateOnboardingStep();
+  });
+  document.getElementById('onboardingLater').addEventListener('click', () => {
+    closeModals();
+    showToast('Możesz wrócić do konfiguracji w Profilu działalności.', 'info');
+  });
+  document.getElementById('onboardingForm').addEventListener('submit', event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const wasDemoProfile = state.company.nip === '0000000000';
+    state.company = {
+      name: form.elements.onboardingCompany.value.trim(),
+      nip: form.elements.onboardingNip.value.replace(/\D/g, '')
+    };
+    state.declarationProfile.firstName = form.elements.onboardingFirstName.value.trim();
+    state.declarationProfile.lastName = form.elements.onboardingLastName.value.trim();
+    const category = form.elements.onboardingCategory.value;
+    const pkwiu = form.elements.onboardingPkwiu.value.trim();
+    if (pkwiu && state.categoryProfiles[category]) state.categoryProfiles[category].pkwiu = pkwiu;
+    if (wasDemoProfile) {
+      state.invoices = [];
+      state.tasks = Object.assign({}, initialState.tasks);
+      state.ryczaltSettings = { byPeriod: {} };
+    }
+    state.onboardingCompleted = true;
+    persist();
+    fillVerificationForm();
+    fillDeclarationProfile();
+    renderCompany();
+    renderTasks();
+    renderCalculations();
+    closeModals();
+    showView('settings');
+    showToast('Podstawowa konfiguracja została zapisana. Uzupełnij brakujące pola profilu.');
   });
 
   document.getElementById('mobileMenu').addEventListener('click', () => {
@@ -962,7 +1307,23 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
 
   document.getElementById('previousMonth').addEventListener('click', () => changeMonth(-1));
   document.getElementById('nextMonth').addEventListener('click', () => changeMonth(1));
-  document.getElementById('periodButton').addEventListener('click', () => showToast('Użyj strzałek, aby zmienić miesiąc.', 'info'));
+  document.getElementById('periodButton').addEventListener('click', () => {
+    const picker = document.getElementById('periodPicker');
+    document.getElementById('periodPickerInput').value = state.period.slice(0, 7);
+    picker.hidden = !picker.hidden;
+  });
+  document.getElementById('applyPeriod').addEventListener('click', () => {
+    const selected = document.getElementById('periodPickerInput').value;
+    if (!/^\d{4}-\d{2}$/.test(selected)) return;
+    state.period = selected + '-01';
+    document.getElementById('periodPicker').hidden = true;
+    updatePeriod();
+    fillRuleForm();
+    fillVerificationForm();
+    renderCalculations();
+    persist();
+    showToast('Wybrano okres: ' + periodName(), 'info');
+  });
 
   function changeMonth(offset) {
     const date = periodDate();
@@ -1015,24 +1376,92 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
 
   document.getElementById('invoiceSearch').addEventListener('input', renderInvoices);
   document.getElementById('invoiceFilter').addEventListener('change', renderInvoices);
-  document.getElementById('addInvoice').addEventListener('click', () => {
+  document.getElementById('invoicePeriodFilter').addEventListener('change', renderInvoices);
+  document.getElementById('showReviewInvoices').addEventListener('click', () => {
+    document.getElementById('invoicePeriodFilter').value = 'period';
+    document.getElementById('invoiceFilter').value = 'review';
+    renderInvoices();
+    document.querySelector('.table-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  document.getElementById('periodHistoryList').addEventListener('click', event => {
+    const button = event.target.closest('[data-period-value]');
+    if (!button) return;
+    state.period = button.dataset.periodValue + '-01';
+    updatePeriod();
+    fillRuleForm();
+    fillVerificationForm();
+    renderCalculations();
+    persist();
+    showView('dashboard');
+  });
+  function configureInvoiceType(type) {
+    const isCost = type === 'cost';
+    document.querySelector('.rate-field').style.display = isCost ? 'none' : '';
+    document.querySelector('.vat-deduction-field').style.display = isCost ? '' : 'none';
+    setText('vatEffectiveDateText', isCost ? 'Data otrzymania' : 'Data sprzedaży / wykonania usługi');
+  }
+
+  function setInvoiceSourceLock(form, locked) {
+    ['number', 'date', 'vatEffectiveDate', 'contractor', 'contractorNip', 'net'].forEach(name => {
+      form.elements[name].readOnly = locked;
+    });
+    form.querySelectorAll('input[name="invoiceType"]').forEach(input => { input.disabled = locked; });
+    form.elements.documentType.disabled = locked;
+    form.elements.vat.disabled = locked;
+  }
+
+  function openNewInvoiceForm() {
     const form = document.getElementById('invoiceForm');
+    editingInvoiceId = null;
     form.reset();
+    setInvoiceSourceLock(form, false);
     form.elements.date.value = state.period.slice(0, 7) + '-15';
     form.elements.vatEffectiveDate.value = state.period.slice(0, 7) + '-15';
-    setText('vatEffectiveDateText', 'Data sprzedaży / wykonania usługi');
-    document.querySelector('.rate-field').style.display = '';
-    document.querySelector('.vat-deduction-field').style.display = 'none';
+    configureInvoiceType('sale');
+    setText('invoiceModalEyebrow', 'Nowy dokument');
+    setText('invoiceModalTitle', 'Dodaj fakturę');
+    setText('invoiceSubmitButton', 'Dodaj do rozliczenia');
+    document.getElementById('invoiceEditHint').hidden = true;
     openModal('invoiceModal');
     setTimeout(() => form.elements.number.focus(), 100);
-  });
+  }
+
+  function openInvoiceEditor(invoice) {
+    const form = document.getElementById('invoiceForm');
+    editingInvoiceId = String(invoice.id);
+    form.reset();
+    form.elements.invoiceType.value = invoice.type;
+    form.elements.number.value = invoice.number || '';
+    form.elements.date.value = invoice.date || '';
+    form.elements.documentType.value = invoice.documentType || 'invoice';
+    form.elements.vatEffectiveDate.value = invoice.type === 'sale'
+      ? (invoice.taxPointDate || invoice.supplyDate || invoice.date || '')
+      : (invoice.receivedDate || invoice.date || '');
+    form.elements.contractor.value = invoice.contractor || '';
+    form.elements.contractorNip.value = invoice.contractorNip || '';
+    form.elements.net.value = Number.isFinite(Number(invoice.net)) ? Number(invoice.net).toFixed(2) : '';
+    form.elements.vat.value = invoice.vatCode || String(Number(invoice.vatRate || 0));
+    if (invoice.category) form.elements.category.value = invoice.category;
+    if (invoice.vatDeductionPercent != null) form.elements.vatDeductionPercent.value = String(invoice.vatDeductionPercent);
+    configureInvoiceType(invoice.type);
+    const fromKsef = invoice.source === 'ksef';
+    setInvoiceSourceLock(form, fromKsef);
+    setText('invoiceModalEyebrow', fromKsef ? 'Dokument z KSeF' : 'Edycja dokumentu');
+    setText('invoiceModalTitle', fromKsef ? 'Sprawdź klasyfikację faktury' : 'Edytuj fakturę');
+    setText('invoiceSubmitButton', fromKsef ? 'Zapisz klasyfikację' : 'Zapisz zmiany');
+    const hint = document.getElementById('invoiceEditHint');
+    hint.hidden = false;
+    hint.textContent = fromKsef
+      ? 'Danych źródłowych faktury z KSeF nie zmieniamy. Możesz uzupełnić rodzaj usługi albo decyzję o odliczeniu VAT.'
+      : 'Możesz poprawić dane dokumentu oraz jego klasyfikację. Po zapisaniu wszystkie kwoty zostaną przeliczone.';
+    openModal('invoiceModal');
+  }
+
+  document.getElementById('addInvoice').addEventListener('click', openNewInvoiceForm);
 
   document.querySelectorAll('input[name="invoiceType"]').forEach(input => {
     input.addEventListener('change', () => {
-      document.querySelector('.rate-field').style.display = input.value === 'sale' && input.checked ? '' : (document.querySelector('input[name="invoiceType"]:checked').value === 'cost' ? 'none' : '');
-      const isCost = document.querySelector('input[name="invoiceType"]:checked').value === 'cost';
-      document.querySelector('.vat-deduction-field').style.display = isCost ? '' : 'none';
-      setText('vatEffectiveDateText', isCost ? 'Data otrzymania' : 'Data sprzedaży / wykonania usługi');
+      if (input.checked) configureInvoiceType(input.value);
     });
   });
 
@@ -1040,19 +1469,27 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
-    const type = data.get('invoiceType');
-    const documentType = String(data.get('documentType'));
-    const vatCode = String(data.get('vat'));
+    const existingInvoice = editingInvoiceId
+      ? state.invoices.find(invoice => String(invoice.id) === editingInvoiceId)
+      : null;
+    const sourceLocked = existingInvoice && existingInvoice.source === 'ksef';
+    const type = sourceLocked ? existingInvoice.type : String(data.get('invoiceType'));
+    const documentType = sourceLocked ? (existingInvoice.documentType || 'invoice') : String(data.get('documentType'));
+    const vatCode = sourceLocked ? String(existingInvoice.vatCode || existingInvoice.vatRate) : String(data.get('vat'));
     const vatRate = Number(vatCode) || 0;
-    const effectiveDate = String(data.get('vatEffectiveDate'));
+    const effectiveDate = sourceLocked
+      ? (type === 'sale'
+        ? (existingInvoice.taxPointDate || existingInvoice.supplyDate || existingInvoice.date)
+        : (existingInvoice.receivedDate || existingInvoice.date))
+      : String(data.get('vatEffectiveDate'));
     const prepared = prepareInvoice({
-      id: Date.now(),
-      number: String(data.get('number')).trim(),
-      date: String(data.get('date')),
-      contractor: String(data.get('contractor')).trim(),
-      contractorNip: String(data.get('contractorNip')).replace(/\D/g, ''),
+      id: existingInvoice ? existingInvoice.id : Date.now(),
+      number: sourceLocked ? existingInvoice.number : String(data.get('number')).trim(),
+      date: sourceLocked ? existingInvoice.date : String(data.get('date')),
+      contractor: sourceLocked ? existingInvoice.contractor : String(data.get('contractor')).trim(),
+      contractorNip: sourceLocked ? existingInvoice.contractorNip : String(data.get('contractorNip')).replace(/\D/g, ''),
       type,
-      net: data.get('net'),
+      net: sourceLocked ? existingInvoice.net : data.get('net'),
       vatCode,
       vatRate,
       currency: 'PLN',
@@ -1071,6 +1508,27 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     const localInvoice = prepared.value;
 
     try {
+      if (existingInvoice) {
+        const updatedInvoice = Object.assign({}, existingInvoice, localInvoice, {
+          id: existingInvoice.id,
+          source: existingInvoice.source
+        });
+        if (window.PewnikCloud) {
+          if (sourceLocked) {
+            if (type === 'sale') await window.PewnikCloud.updateInvoiceCategory(existingInvoice.id, updatedInvoice.category);
+            if (type === 'cost') await window.PewnikCloud.updateInvoiceVatDeduction(existingInvoice.id, updatedInvoice.vatDeductionPercent);
+          } else {
+            await window.PewnikCloud.updateInvoice(existingInvoice.id, updatedInvoice);
+          }
+        }
+        state.invoices = state.invoices.map(invoice => String(invoice.id) === editingInvoiceId ? updatedInvoice : invoice);
+        editingInvoiceId = null;
+        persist();
+        renderCalculations();
+        closeModals();
+        showToast('Zapisano zmiany faktury i przeliczono miesiąc.');
+        return;
+      }
       const invoice = window.PewnikCloud
         ? await window.PewnikCloud.createInvoice(localInvoice)
         : localInvoice;
@@ -1146,8 +1604,16 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
   });
 
   document.getElementById('invoiceTableBody').addEventListener('click', async event => {
+    const editButton = event.target.closest('[data-edit-invoice]');
+    if (editButton) {
+      const invoice = state.invoices.find(item => String(item.id) === editButton.dataset.editInvoice);
+      if (invoice) openInvoiceEditor(invoice);
+      return;
+    }
     const button = event.target.closest('[data-delete-invoice]');
     if (!button) return;
+    const invoiceNumber = button.dataset.invoiceNumber || '';
+    if (!window.confirm('Usunąć fakturę ' + invoiceNumber + '? Tej operacji nie można cofnąć.')) return;
     try {
       if (window.PewnikCloud) await window.PewnikCloud.deleteInvoice(button.dataset.deleteInvoice);
       state.invoices = state.invoices.filter(invoice => String(invoice.id) !== button.dataset.deleteInvoice);
@@ -1164,15 +1630,7 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     fillVerificationForm();
     persist();
     renderCalculations();
-    showToast('Reguły zapisano. Wszystkie kwoty zostały przeliczone.');
-  });
-
-  document.getElementById('saveCategoryProfiles').addEventListener('click', () => {
-    if (!saveCategoryProfiles()) return;
-    fillRuleForm();
-    persist();
-    renderCalculations();
-    showToast('Profil działalności zapisano. Będzie używany także w kolejnych miesiącach.');
+    showToast('Ustawienie VAT zapisano dla wybranego miesiąca.');
   });
 
   document.getElementById('savePeriodDeduction').addEventListener('click', () => {
@@ -1202,24 +1660,23 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     showToast('Przywrócono wartości demonstracyjne.');
   });
 
-  document.getElementById('saveSettings').addEventListener('click', () => {
+  document.getElementById('saveCategoryProfiles').addEventListener('click', () => {
     const name = document.getElementById('companyName').value.trim();
     const nip = document.getElementById('companyNip').value.replace(/\D/g, '');
     if (!name || nip.length !== 10) {
-      showToast('Uzupełnij nazwę i wpisz 10 cyfr NIP.', 'info');
+      showToast('Uzupełnij nazwę firmy i wpisz 10 cyfr NIP.', 'error');
+      document.getElementById(!name ? 'companyName' : 'companyNip').focus();
       return;
     }
     state.company = { name, nip };
+    saveDeclarationProfile();
+    if (!saveCategoryProfiles()) return;
+    state.onboardingCompleted = true;
+    fillRuleForm();
     renderCompany();
     persist();
-    showToast('Ustawienia działalności zostały zapisane.');
-  });
-
-  document.getElementById('saveDeclarationProfile').addEventListener('click', () => {
-    saveDeclarationProfile();
-    persist();
-    renderDeclarations();
-    showToast('Profil deklaracyjny został zapisany.');
+    renderCalculations();
+    showToast('Cały profil działalności został zapisany.');
   });
 
   document.getElementById('testKsefConnection').addEventListener('click', () => runKsefAction('status'));
@@ -1233,7 +1690,11 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
     });
   });
   document.addEventListener('keydown', event => {
-    if (event.key === 'Escape') closeModals();
+    if (event.key === 'Escape') {
+      closeModals();
+      closeAssistant();
+      document.getElementById('periodPicker').hidden = true;
+    }
   });
 
   document.querySelectorAll('.preview-declaration').forEach(button => {
@@ -1263,6 +1724,7 @@ import { createDeclarationBundle, generateJpkV7mXml, generateZusDraKeduDraftXml 
   fillDeclarationProfile();
   renderTasks();
   renderCalculations();
+  refreshOnboarding();
   refreshKsefPanel();
   if (window.PewnikCloud) {
     window.PewnikCloud.init({ getState, replaceState, showToast });

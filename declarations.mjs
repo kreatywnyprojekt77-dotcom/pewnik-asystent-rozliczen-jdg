@@ -1,7 +1,7 @@
 export const DECLARATION_SCHEMA_VERSIONS = Object.freeze({
   ryczalt: "PEWNIK-RYCZALT-MIESIECZNY-2026.1",
   jpk: "JPK_V7M-3-1-0E",
-  zus: "ZUS-DRA-KEDU-2.27-DRAFT",
+  zus: "ZUS-DRA-KEDU-2.27-5.7.0",
 });
 
 const NUMERIC_VAT_CODES = new Set(["23", "8", "5", "0"]);
@@ -140,6 +140,9 @@ function jpkInvoiceFindings(invoices) {
     } else if (!/^\d{10}$/.test(contractorTaxId)) {
       findings.push(finding("INVALID_CONTRACTOR_TAX_ID", `NIP kontrahenta przy dokumencie ${invoice.number || id} musi mieć 10 cyfr.`, `invoices.${id}.contractorNip`));
     }
+    if (invoice.type === "sale" && !["software", "consulting"].includes(invoice.category)) {
+      findings.push(finding("MISSING_JPK_SERVICE_CLASSIFICATION", `Przypisz usługę programistyczną albo konsultingową do dokumentu ${invoice.number || id}.`, `invoices.${id}.category`));
+    }
     for (const row of invoiceVatRows(invoice)) {
       if (!NUMERIC_VAT_CODES.has(row.vatCode)) {
         findings.push(finding("UNSUPPORTED_JPK_VAT_CODE", `Kod VAT ${row.vatCode || "brak"} przy dokumencie ${invoice.number || id} wymaga ręcznej obsługi.`, `invoices.${id}.vatCode`));
@@ -181,6 +184,7 @@ function buildJpkDocument(company, profile, invoices, summary, period) {
   const periodInvoices = entriesForPeriod(invoices, period);
   const result = summary?.components?.vat?.result || {};
   const findings = [...jpkProfileFindings(company, profile), ...jpkInvoiceFindings(periodInvoices)];
+  if (period && period < "2026-02") findings.push(finding("JPK_SCHEMA_NOT_VALID_FOR_PERIOD", "JPK_V7M(3) można przygotować dla okresów od lutego 2026 r.", "period"));
   const salesRows = periodInvoices.filter((invoice) => invoice.type === "sale").map((invoice, index) => ({
     index: index + 1,
     invoice,
@@ -208,6 +212,7 @@ function buildJpkDocument(company, profile, invoices, summary, period) {
     outputVatGrosz: result.outputVatGrosz ?? null,
     deductibleInputVatGrosz: result.deductibleInputVatGrosz ?? null,
     taxDueGrosz: result.taxDueGrosz ?? null,
+    openingCarryForwardGrosz: result.openingCarryForwardGrosz ?? 0,
     excessGrosz: result.excessGrosz ?? null,
     carryForwardGrosz: result.carryForwardGrosz ?? null,
     ruleVersion: result.ruleVersion || null,
@@ -218,22 +223,24 @@ function buildZusDocument(company, profile, summary, period) {
   const result = summary?.components?.zus?.result || {};
   const findings = [];
   if (!nipChecksumValid(company.nip)) findings.push(finding("INVALID_NIP", "Wpisz prawidłowy NIP płatnika.", "company.nip"));
+  if (!text(profile.zusShortName) || text(profile.zusShortName).length > 31) findings.push(finding("INVALID_ZUS_SHORT_NAME", "Uzupełnij nazwę skróconą płatnika ZUS (maksymalnie 31 znaków).", "declarationProfile.zusShortName"));
   if (!peselShapeValid(profile.pesel)) findings.push(finding("INVALID_PESEL", "Wpisz prawidłowy PESEL właścicielki.", "declarationProfile.pesel"));
   if (!/^\d{9}$/.test(digits(profile.regon))) findings.push(finding("INVALID_REGON", "Wpisz dziewięciocyfrowy REGON.", "declarationProfile.regon"));
   if (!/^\d{6}$/.test(digits(profile.zusInsuranceTitleCode))) findings.push(finding("INVALID_ZUS_TITLE_CODE", "Wpisz sześciocyfrowy kod tytułu ubezpieczenia.", "declarationProfile.zusInsuranceTitleCode"));
-  findings.push(finding(
-    "KEDU_ACCEPTANCE_REQUIRED",
-    "Eksport KEDU pozostaje wersją techniczną do czasu przejścia testów oprogramowania interfejsowego ZUS.",
-    "zus.kedu",
-    "warning",
-  ));
+  if (!text(profile.firstName)) findings.push(finding("MISSING_FIRST_NAME", "Uzupełnij imię właścicielki.", "declarationProfile.firstName"));
+  if (!text(profile.lastName)) findings.push(finding("MISSING_LAST_NAME", "Uzupełnij nazwisko właścicielki.", "declarationProfile.lastName"));
+  if (!validDate(profile.birthDate)) findings.push(finding("MISSING_BIRTH_DATE", "Uzupełnij datę urodzenia właścicielki.", "declarationProfile.birthDate"));
+  const requiredAmounts = ["socialBaseGrosz", "socialInsuranceDueGrosz", "labourFundsDueGrosz", "healthRevenueYtdGrosz", "healthBaseGrosz", "healthContributionGrosz", "totalDueGrosz"];
+  if (requiredAmounts.some((name) => !Number.isSafeInteger(result[name]) || result[name] < 0)) {
+    findings.push(finding("INCOMPLETE_ZUS_CALCULATION", "Brakuje kompletnego, zweryfikowanego wyliczenia potrzebnego do ZUS DRA.", "summary.components.zus.result"));
+  }
   return {
     kind: "ZUS_DRA",
     title: "ZUS DRA — deklaracja rozliczeniowa",
     schemaVersion: DECLARATION_SCHEMA_VERSIONS.zus,
-    targetSchema: "KEDU-2.27",
-    exportMode: "TECHNICAL_DRAFT",
-    acceptanceStatus: "NOT_TESTED_BY_ZUS",
+    targetSchema: "KEDU-2.27 / KEDU_5_7",
+    exportMode: "IMPORT_FILE",
+    acceptanceStatus: "LOCAL_XSD_VALIDATION_REQUIRED",
     officialSpecificationUrl: "https://www.zus.pl/bip/wymagania-dla-oprogramowania-interfejsowego/dokumenty-ubezpieczeniowe",
     period,
     status: statusFor(findings, result.status),
@@ -245,6 +252,7 @@ function buildZusDocument(company, profile, summary, period) {
     socialInsuranceDueGrosz: result.socialInsuranceDueGrosz ?? null,
     labourFundsDueGrosz: result.labourFundsDueGrosz ?? null,
     healthRevenueYtdGrosz: result.healthRevenueYtdGrosz ?? null,
+    healthBaseGrosz: result.healthBaseGrosz ?? null,
     healthContributionGrosz: result.healthContributionGrosz ?? null,
     totalDueGrosz: result.totalDueGrosz ?? null,
     ruleVersion: result.ruleVersion || null,
@@ -287,6 +295,7 @@ function jpkSalesXml(row) {
     xmlElement("DataWystawienia", invoice.date),
     xmlElement("DataSprzedazy", invoice.supplyDate || invoice.taxPointDate || invoice.date),
     invoice.ksefNumber ? xmlElement("NrKSeF", invoice.ksefNumber) : xmlElement("OFF", 1),
+    invoice.category === "consulting" ? xmlElement("GTU_12", 1) : "",
     ...amountFields,
     "    </SprzedazWiersz>",
   ].filter(Boolean).join("\n");
@@ -337,7 +346,7 @@ export function generateJpkV7mXml(document, generatedAt = new Date().toISOString
     ["P_13", roundedPln(salesNetByCode["0"])], ["P_15", roundedPln(salesNetByCode["5"])], ["P_16", roundedPln(salesVatByCode["5"])],
     ["P_17", roundedPln(salesNetByCode["8"])], ["P_18", roundedPln(salesVatByCode["8"])], ["P_19", roundedPln(salesNetByCode["23"])], ["P_20", roundedPln(salesVatByCode["23"])],
     ["P_37", roundedPln(document.outputVatGrosz)], ["P_38", 0], ["P_39", 0], ["P_40", 0], ["P_41", 0],
-    ["P_42", roundedPln(purchaseNet)], ["P_43", roundedPln(purchaseVat)], ["P_44", 0], ["P_45", 0], ["P_46", 0], ["P_47", roundedPln(purchaseVat)], ["P_48", roundedPln(purchaseVat)],
+    ["P_42", roundedPln(purchaseNet)], ["P_43", roundedPln(purchaseVat)], ["P_44", 0], ["P_45", 0], ["P_46", 0], ["P_47", roundedPln(purchaseVat)], ["P_48", roundedPln(purchaseVat + (document.openingCarryForwardGrosz || 0))],
     ["P_51", duePln], ["P_53", excessPln], ["P_62", roundedPln(document.carryForwardGrosz)], ["P_68", 0], ["P_69", 0],
   ];
   const lines = [
@@ -390,26 +399,80 @@ export function generateJpkV7mXml(document, generatedAt = new Date().toISOString
   return lines.filter(Boolean).join("\n");
 }
 
-export function generateZusDraKeduDraftXml(document) {
+function zusContribution(document, code) {
+  const row = document.socialRows.find((item) => item.code === code);
+  return row?.amountGrosz ?? 0;
+}
+
+function keduBlock(name, values, indent = "    ") {
+  const fields = values.map((value, index) => xmlElement(`p${index + 1}`, value, indent + "  ")).filter(Boolean);
+  return fields.length ? `${indent}<${name}>\n${fields.join("\n")}\n${indent}</${name}>` : "";
+}
+
+export function generateZusDraKeduXml(document, generatedAt = new Date().toISOString()) {
   if (!isRecord(document) || document.kind !== "ZUS_DRA") throw new TypeError("Nieprawidłowy dokument ZUS DRA.");
-  if (document.status === "BLOCKED") throw new Error("ZUS DRA zawiera braki blokujące eksport.");
+  if (document.status !== "READY") throw new Error("ZUS DRA nie jest jeszcze gotowy do eksportu KEDU. Sprawdź wszystkie uwagi.");
   const [year, month] = document.period.split("-");
+  const pension = zusContribution(document, "PENSION");
+  const disability = zusContribution(document, "DISABILITY");
+  const sickness = zusContribution(document, "SICKNESS");
+  const accident = zusContribution(document, "ACCIDENT");
+  const sicknessBase = sickness > 0 ? document.socialBaseGrosz : 0;
+  const titleCode = document.profile.zusInsuranceTitleCode;
+  const createdDate = String(generatedAt).slice(0, 10);
   return [
     '<?xml version="1.0" encoding="utf-8"?>',
-    '<PEWNIK_ZUS_DRA_DRAFT target_schema="KEDU-2.27" status="WERSJA_TECHNICZNA_DO_TESTOW_ZUS">',
-    '  <deklaracja typ="ZUS_DRA">',
-    xmlElement("identyfikator", `01${month}${year}`, "    "),
-    xmlElement("nip", document.company.nip, "    "),
-    xmlElement("regon", document.profile.regon, "    "),
-    xmlElement("pesel", document.profile.pesel, "    "),
-    xmlElement("kod_tytulu_ubezpieczenia", document.profile.zusInsuranceTitleCode, "    "),
-    xmlElement("podstawa_spoleczne", pln(document.socialBaseGrosz), "    "),
-    xmlElement("skladki_spoleczne", pln(document.socialInsuranceDueGrosz), "    "),
-    xmlElement("fundusz_pracy", pln(document.labourFundsDueGrosz), "    "),
-    xmlElement("przychod_zdrowotna_narastajaco", pln(document.healthRevenueYtdGrosz), "    "),
-    xmlElement("skladka_zdrowotna", pln(document.healthContributionGrosz), "    "),
-    xmlElement("razem", pln(document.totalDueGrosz), "    "),
-    "  </deklaracja>",
-    "</PEWNIK_ZUS_DRA_DRAFT>",
-  ].join("\n");
+    '<KEDU wersja_schematu="1" xmlns="http://www.zus.pl/2026/KEDU_5_7" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.zus.pl/2026/KEDU_5_7 kedu_5_7.xsd">',
+    "  <naglowek.KEDU>",
+    "    <program>",
+    xmlElement("producent", "Pewnik", "      "),
+    xmlElement("symbol", "Pewnik", "      "),
+    xmlElement("wersja", "1.0.0", "      "),
+    "    </program>",
+    xmlElement("data_utworzenia_KEDU", createdDate, "    "),
+    "  </naglowek.KEDU>",
+    '  <ZUSDRA id_dokumentu="1">',
+    "    <I>",
+    xmlElement("p1", "6", "      "),
+    "      <p2>",
+    xmlElement("p1", "01", "        "),
+    xmlElement("p2", `${year}-${month}`, "        "),
+    "      </p2>",
+    "    </I>",
+    keduBlock("II", [document.company.nip, document.profile.regon, document.profile.pesel, null, null, document.profile.zusShortName, document.profile.lastName, document.profile.firstName, document.profile.birthDate]),
+    keduBlock("III", [1, null, "1.67"]),
+    keduBlock("IV", [
+      pln(pension), pln(disability), pln(pension + disability),
+      pln(pension), pln(disability), pln(pension + disability),
+      null, null, null, null, null, null, null, null, null, null, null, null,
+      pln(sickness), pln(accident), pln(sickness + accident),
+      pln(sickness), pln(accident), pln(sickness + accident),
+      null, null, null, null, null, null, null, null, null, null, null, null,
+      pln(document.socialInsuranceDueGrosz),
+    ]),
+    keduBlock("V", ["0.00", "0.00", "0.00", "0.00", "0.00"]),
+    keduBlock("VI", ["0.00", pln(document.healthContributionGrosz), "0.00", "0.00", pln(document.healthContributionGrosz), "0.00", pln(document.healthContributionGrosz)]),
+    keduBlock("VII", [pln(document.labourFundsDueGrosz), "0.00", pln(document.labourFundsDueGrosz)]),
+    keduBlock("IX", ["0.00", pln(document.totalDueGrosz)]),
+    "    <X>",
+    "      <p1>",
+    xmlElement("p1", titleCode.slice(0, 4), "        "),
+    xmlElement("p2", titleCode.slice(4, 5), "        "),
+    xmlElement("p3", titleCode.slice(5, 6), "        "),
+    "      </p1>",
+    xmlElement("p2", pln(document.socialBaseGrosz), "      "),
+    xmlElement("p3", pln(sicknessBase), "      "),
+    xmlElement("p4", pln(document.socialBaseGrosz), "      "),
+    xmlElement("p5", pln(document.healthBaseGrosz), "      "),
+    xmlElement("p6", "0", "      "),
+    "    </X>",
+    keduBlock("XI", [
+      "false", null, null, null, "false", null, null, null, "false", null, null,
+      "true", pln(document.healthRevenueYtdGrosz), "false", null,
+      pln(document.healthBaseGrosz), pln(document.healthContributionGrosz), "false",
+    ]),
+    keduBlock("XIII", [createdDate]),
+    "  </ZUSDRA>",
+    "</KEDU>",
+  ].filter(Boolean).join("\n");
 }

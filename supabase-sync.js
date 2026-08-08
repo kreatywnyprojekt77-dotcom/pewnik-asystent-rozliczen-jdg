@@ -296,6 +296,23 @@
     return invoiceFromDatabase(data);
   }
 
+  async function updateInvoice(invoiceId, invoice) {
+    if (!currentUser) return invoice;
+    const row = invoiceToDatabase(invoice, currentUser.id);
+    delete row.user_id;
+    delete row.source;
+    row.updated_at = new Date().toISOString();
+    const { data, error } = await client
+      .from('invoices')
+      .update(row)
+      .eq('id', invoiceId)
+      .eq('user_id', currentUser.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return invoiceFromDatabase(data);
+  }
+
   async function updateInvoiceCategory(invoiceId, category) {
     if (!currentUser) return;
     const { error } = await client
@@ -443,6 +460,7 @@
     init,
     queueSave,
     createInvoice,
+    updateInvoice,
     updateInvoiceCategory,
     updateInvoiceVatDeduction,
     updateInvoiceContractorNip,

@@ -1,4 +1,4 @@
-import { access, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, copyFile, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -74,12 +74,18 @@ const runtimeFiles = [
   'zus-calculator.mjs',
   'zus-adapter.mjs',
   'monthly-summary.mjs',
-  'declarations.mjs'
+  'declarations.mjs',
+  'declaration-validation.mjs'
 ];
 
 await Promise.all(runtimeFiles.map(file =>
   copyFile(resolve(root, file), resolve(output, file))
 ));
+
+await Promise.all([
+  cp(resolve(root, 'schemas'), resolve(output, 'schemas'), { recursive: true }),
+  cp(resolve(root, 'vendor'), resolve(output, 'vendor'), { recursive: true })
+]);
 
 await Promise.all([
   copyFile(resolve(root, 'node_modules', 'pdfmake', 'build', 'pdfmake.min.js'), resolve(output, 'pdfmake.min.js')),

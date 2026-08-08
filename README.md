@@ -362,6 +362,34 @@ Adapter ryczałtu uwzględnia wyłącznie sprzedaż z wybranego miesiąca, a prz
 
 Generator zwraca wszystkie kwoty pieniężne jako całkowite grosze. Wynik zawiera wspólny status, komponenty `ryczalt`, `vat` i `zus`, metryki dokumentów, ustalenia ze wskazaniem obszaru oraz audyt wersji reguł i identyfikatorów dokumentów. `INVALID` lub brak kwoty któregokolwiek zobowiązania blokuje łączną kwotę. Przy `REVIEW_REQUIRED` kwota robocza może pozostać widoczna, ale `payment.canCreateTransfers` ma wartość `false`; przelewy są dostępne dopiero dla kompletnego wyniku `VERIFIED`.
 
+### Architektura informacji dla przedsiębiorcy
+
+Interfejs pozwala otworzyć każdą fakturę z listy i poprawić jej klasyfikację. Dla dokumentów pobranych z KSeF pola źródłowe pozostają zablokowane, ale można uzupełnić kategorię ryczałtu i sposób odliczenia VAT. Samouczek jest stale widoczny w bocznym panelu, a przycisk `Wstecz` pozwala wrócić do poprzedniego ekranu aplikacji. Podsumowanie zawiera jeden kalendarz miesiąca z terminami ryczałtu, ZUS (DRA i płatność) oraz JPK_V7M i VAT.
+
+Główna nawigacja aplikacji odpowiada trzem czynnościom wykonywanym przez przedsiębiorcę:
+
+- `Podsumowanie` pokazuje stan miesiąca, brakujące informacje, obliczone kwoty, plan działania i historię okresów;
+- `Faktury` służą do zebrania dokumentów oraz uzupełnienia klasyfikacji ryczałtu i decyzji VAT;
+- `Deklaracje i płatności` skupiają dokumenty, kwoty oraz dalsze czynności związane z wysyłką i zapłatą.
+
+Weryfikacja nie jest osobnym miejscem w nawigacji. Jej zadania są prezentowane w kontekście na `Podsumowaniu` i w widoku `Faktury`. Historia rozliczeń również nie jest osobnym ekranem: wybór okresu i lista poprzednich miesięcy prowadzą bezpośrednio do podsumowania wybranego miesiąca. `Profil działalności`, `Reguły i źródła` oraz pomoc są funkcjami wspierającymi i pozostają oddzielone od trzech procesów głównych.
+
+### Przygotowanie dokumentów urzędowych bez wysyłki
+
+Aplikacja przygotowuje pliki do późniejszego, samodzielnego importu przez użytkownika. Nie loguje się do systemów urzędowych, nie podpisuje dokumentów, nie wysyła ich i nie pobiera UPO.
+
+- JPK jest generowany jako `JPK_V7M(3)` zgodny ze wzorem CRWDE `2025/12/19/14090` obowiązującym od 1 lutego 2026 r.;
+- ZUS DRA jest umieszczany w kolekcji `KEDU_5_7` zgodnej ze specyfikacją EWD 2.27 obowiązującą od 25 kwietnia 2026 r.;
+- przed pobraniem oba pliki są lokalnie walidowane oficjalnymi schematami XSD znajdującymi się w katalogu `schemas`;
+- walidacja działa w przeglądarce przez WebAssembly i nie przesyła zawartości dokumentów poza urządzenie użytkownika;
+- PDF jest wyłącznie czytelnym podglądem. Plikiem do importu w narzędziu urzędowym jest XML.
+
+Poprawny wynik walidacji XSD potwierdza format i strukturę pliku, ale nie zastępuje końcowych kontroli biznesowych wykonywanych przez narzędzie MF lub ZUS podczas importu. Implementacja KEDU nie przeszła zestawu testów akceptacyjnych producenta oprogramowania interfejsowego ZUS, dlatego aplikacja nie obiecuje przyjęcia pliku bez dodatkowych komunikatów po stronie narzędzia ZUS.
+
+Generator ZUS DRA obejmuje wyłącznie ustalony przypadek: jedna JDG bez pracowników, standardowy ZUS, pełny miesiąc, ryczałt, brak ulg, brak wakacji składkowych, brak korekty i brak rocznego rozliczenia zdrowotnego. Inny przypadek musi zostać zablokowany przed pobraniem.
+
+Generator JPK obejmuje zwykłe krajowe faktury usług programistycznych i konsultingowych w PLN, bez procedur szczególnych. Sprzedaż konsultingowa otrzymuje oznaczenie `GTU_12`; sprzedaż programistyczna nie otrzymuje oznaczenia GTU. Brak klasyfikacji usługi blokuje pobranie JPK.
+
 Obecny interfejs nie zapisuje kompletnej klasyfikacji PKWiU, podstawy prawnej ani decyzji podatkowej. Adapter nie uzupełnia ich fikcyjnymi danymi, dlatego wynik ryczałtu pozostaje `REVIEW_REQUIRED`, dopóki te informacje nie zostaną jawnie dostarczone. Status całego rozliczenia uwzględnia niezależnie status ryczałtu, VAT i ZUS.
 
 ## Iteracja kalkulatora ZUS

@@ -50,6 +50,8 @@ Przypadek spoza zakresu daje `INVALID` albo `REVIEW_REQUIRED`. Kalkulator nie zg
 - zdrowotna powyżej 60 000 zł do 300 000 zł: 83 058 gr;
 - zdrowotna powyżej 300 000 zł: 149 504 gr.
 
+Odpowiadające im podstawy wymiaru składki zdrowotnej wynoszą odpowiednio 553 718 gr, 922 864 gr i 1 661 155 gr. Wynik kalkulatora zwraca wybraną podstawę w `healthBaseGrosz`, ponieważ jest ona potrzebna w ZUS DRA.
+
 Kwoty składników społecznych są obliczane osobno i zaokrąglane do pełnego grosza metodą połowa w górę.
 
 ## Kontrakt wejściowy
