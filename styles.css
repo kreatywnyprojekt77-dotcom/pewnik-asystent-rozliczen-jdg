@@ -412,6 +412,7 @@ input:focus { border-color: var(--blue) !important; box-shadow: 0 0 0 3px rgba(3
 .inline-link { display: inline-block; margin-top: 10px; color: var(--blue); font-size: 10px; font-weight: 600; text-decoration: none; }
 .inline-link:hover { text-decoration: underline; }
 .ksef-panel { padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: #fbfcfe; }
+.ksef-invoices-card { margin-bottom: 20px; padding: 20px 24px; }
 .ksef-status-row { display: flex; align-items: center; gap: 11px; }
 .ksef-status-row div { min-width: 0; }
 .ksef-status-row strong, .ksef-status-row small { display: block; }
@@ -436,6 +437,9 @@ input:focus { border-color: var(--blue) !important; box-shadow: 0 0 0 3px rgba(3
 
 .modal-backdrop { position: fixed; inset: 0; padding: 20px; background: rgba(13,20,34,.48); backdrop-filter: blur(3px); display: none; align-items: center; justify-content: center; z-index: 100; }
 .modal-backdrop.visible { display: flex; animation: fadeIn .18s ease; }
+.auth-locked .app-shell { visibility: hidden; }
+#authModal.auth-required { background: var(--navy); backdrop-filter: none; }
+#authModal.auth-required .auth-close { display: none; }
 .modal { width: min(590px, 100%); max-height: calc(100vh - 40px); padding: 24px; border-radius: 14px; background: #fff; box-shadow: 0 24px 70px rgba(12,18,30,.25); overflow-y: auto; }
 .modal-header { margin-bottom: 21px; display: flex; justify-content: space-between; align-items: flex-start; }
 .modal-header h2 { font-size: 19px; }

@@ -934,10 +934,12 @@ import { validateDeclarationXml } from './declaration-validation.mjs';
 
   function closeModals() {
     document.querySelectorAll('.modal-backdrop.visible').forEach(modal => {
+      const authRequired = modal.id === 'authModal' && window.PewnikCloud && !window.PewnikCloud.isSignedIn();
+      if (authRequired) return;
       modal.classList.remove('visible');
       modal.setAttribute('aria-hidden', 'true');
     });
-    document.body.style.overflow = '';
+    document.body.style.overflow = document.querySelector('.modal-backdrop.visible') ? 'hidden' : '';
   }
 
   function fillRuleForm() {
@@ -1111,7 +1113,7 @@ import { validateDeclarationXml } from './declaration-validation.mjs';
 
   function openOnboardingWizard() {
     const form = document.getElementById('onboardingForm');
-    form.elements.onboardingCompany.value = state.company.name.startsWith('DEMO') ? '' : state.company.name;
+    form.elements.onboardingCompany.value = state.company.nip === '0000000000' ? '' : state.company.name;
     form.elements.onboardingNip.value = state.company.nip === '0000000000' ? '' : state.company.nip;
     form.elements.onboardingFirstName.value = state.declarationProfile.firstName;
     form.elements.onboardingLastName.value = state.declarationProfile.lastName;
@@ -1120,11 +1122,14 @@ import { validateDeclarationXml } from './declaration-validation.mjs';
     openModal('onboardingModal');
   }
 
-  function refreshOnboarding() {
+  function refreshOnboarding(event) {
     const modal = document.getElementById('onboardingModal');
-    if (state.onboardingCompleted) {
+    const isSignedIn = Boolean(window.PewnikCloud && window.PewnikCloud.isSignedIn());
+    const forceOnboarding = Boolean(event && event.detail && event.detail.forceOnboarding);
+    if ((state.onboardingCompleted && !forceOnboarding) || !isSignedIn) {
       modal.classList.remove('visible');
       modal.setAttribute('aria-hidden', 'true');
+      if (!document.querySelector('.modal-backdrop.visible')) document.body.style.overflow = '';
       return;
     }
     openOnboardingWizard();
@@ -1682,6 +1687,7 @@ import { validateDeclarationXml } from './declaration-validation.mjs';
   document.getElementById('testKsefConnection').addEventListener('click', () => runKsefAction('status'));
   document.getElementById('syncKsefInvoices').addEventListener('click', () => runKsefAction('sync'));
   window.addEventListener('pewnik:cloud-session', refreshKsefPanel);
+  window.addEventListener('pewnik:cloud-session', refreshOnboarding);
 
   document.querySelectorAll('.modal-close, .declaration-close').forEach(button => button.addEventListener('click', closeModals));
   document.querySelectorAll('.modal-backdrop').forEach(backdrop => {

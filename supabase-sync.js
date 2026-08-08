@@ -13,6 +13,7 @@
   let app = null;
   let currentUser = null;
   let loadedUserId = null;
+  let onboardingPromptedUserId = null;
   let saveTimer = null;
   let pendingState = null;
 
@@ -57,6 +58,35 @@
     [login, register, logout].forEach(button => {
       if (button) button.disabled = busy;
     });
+  }
+
+  function setAuthGate(locked) {
+    const { modal } = elements();
+    const appShell = document.querySelector('.app-shell');
+    document.body.classList.toggle('auth-locked', locked);
+    if (appShell) {
+      appShell.inert = locked;
+      appShell.setAttribute('aria-hidden', String(locked));
+    }
+
+    if (locked) {
+      document.querySelectorAll('.modal-backdrop.visible').forEach(openModal => {
+        if (openModal !== modal) {
+          openModal.classList.remove('visible');
+          openModal.setAttribute('aria-hidden', 'true');
+        }
+      });
+      modal.classList.add('visible', 'auth-required');
+      modal.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+      return;
+    }
+
+    if (modal.classList.contains('auth-required')) {
+      modal.classList.remove('visible', 'auth-required');
+      modal.setAttribute('aria-hidden', 'true');
+    }
+    if (!document.querySelector('.modal-backdrop.visible')) document.body.style.overflow = '';
   }
 
   function updateAccountUi() {
@@ -148,7 +178,7 @@
       setBusy(true);
       const { error } = await client.auth.signOut();
       if (error) throw error;
-      setMessage('Wylogowano. Aplikacja działa teraz na danych lokalnych.', false);
+      setMessage('Wylogowano. Zaloguj się ponownie, aby korzystać z aplikacji.', false);
     } catch (error) {
       setMessage(error.message || 'Nie udało się wylogować.', true);
     } finally {
@@ -410,12 +440,23 @@
 
   async function handleSession(session) {
     const nextUser = session ? session.user : null;
-    if (!nextUser) loadedUserId = null;
+    if (!nextUser) {
+      loadedUserId = null;
+      onboardingPromptedUserId = null;
+    }
     currentUser = nextUser;
     updateAccountUi();
     if (currentUser) await loadRemoteState(currentUser);
+    setAuthGate(!currentUser);
+    const forceOnboarding = Boolean(
+      currentUser &&
+      currentUser.user_metadata &&
+      currentUser.user_metadata.force_onboarding_each_login === true &&
+      onboardingPromptedUserId !== currentUser.id
+    );
+    if (forceOnboarding) onboardingPromptedUserId = currentUser.id;
     window.dispatchEvent(new CustomEvent('pewnik:cloud-session', {
-      detail: { signedIn: Boolean(currentUser) }
+      detail: { signedIn: Boolean(currentUser), forceOnboarding }
     }));
   }
 
@@ -430,6 +471,7 @@
     register.addEventListener('click', signUp);
     logout.addEventListener('click', signOut);
 
+    setAuthGate(true);
     updateAccountUi();
     if (!isConfigured) return;
 
@@ -468,6 +510,9 @@
     getKsefConnection,
     testKsefConnection,
     syncKsefInvoices,
-    isSignedIn: () => Boolean(currentUser)
+    isSignedIn: () => Boolean(currentUser),
+    shouldForceOnboarding: () => Boolean(
+      currentUser && currentUser.user_metadata && currentUser.user_metadata.force_onboarding_each_login === true
+    )
   };
 })();

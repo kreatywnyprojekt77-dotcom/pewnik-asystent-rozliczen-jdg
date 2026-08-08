@@ -7,8 +7,8 @@
   <title>Pewnik — Twoje miesięczne rozliczenie </title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
-  <div class="app-shell">
+<body class="auth-locked">
+  <div class="app-shell" inert aria-hidden="true">
     <aside class="sidebar" id="sidebar">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -241,6 +241,28 @@
           <article class="mini-metric"><span>Koszty netto</span><strong id="costMetric">2 600,00 zł</strong><small id="costCountMetric">2 faktury kosztowe</small></article>
           <article class="mini-metric"><span>Bilans VAT</span><strong id="vatMetric">2 060,00 zł</strong><small>VAT należny minus naliczony</small></article>
         </div>
+        <article class="card settings-section ksef-settings ksef-invoices-card">
+          <div>
+            <div class="settings-title-row"><h2>Połączenie z KSeF</h2><span class="environment-badge">TEST</span></div>
+            <p>Pobieraj faktury bezpiecznie przez Supabase Edge Function. Token KSeF nie jest wysyłany do przeglądarki.</p>
+            <a class="inline-link" href="https://api-test.ksef.mf.gov.pl/docs/v2" target="_blank" rel="noreferrer">Dokumentacja środowiska testowego ↗</a>
+          </div>
+          <div class="ksef-panel">
+            <div class="ksef-status-row">
+              <span class="ksef-status-dot" id="ksefStatusDot"></span>
+              <div><strong id="ksefStatusTitle">Wymaga logowania</strong><small id="ksefStatusDescription">Zaloguj się do Supabase, aby korzystać z integracji.</small></div>
+            </div>
+            <dl class="ksef-meta">
+              <div><dt>Środowisko</dt><dd>TEST</dd></div>
+              <div><dt>Ostatnia synchronizacja</dt><dd id="ksefLastSync">—</dd></div>
+            </dl>
+            <div class="ksef-actions">
+              <button class="secondary-button" id="testKsefConnection" type="button">Testuj połączenie</button>
+              <button class="primary-button" id="syncKsefInvoices" type="button">Pobierz faktury</button>
+            </div>
+            <p class="ksef-hint">Synchronizacja pobiera metadane faktur sprzedażowych i kosztowych z ostatnich 30 dni, a później działa przyrostowo.</p>
+          </div>
+        </article>
         <article class="invoice-attention-bar" id="invoiceAttentionBar">
           <div><span class="attention-count" id="invoiceAttentionCount">0</span><div><strong id="invoiceAttentionTitle">Wszystkie faktury są sprawdzone</strong><p id="invoiceAttentionText">Dokumenty tego miesiąca mają komplet informacji potrzebnych do obliczeń.</p></div></div>
           <button type="button" class="secondary-button" id="showReviewInvoices">Pokaż wymagające uwagi</button>
@@ -366,29 +388,6 @@
               </article>
             </div>
           </div>
-          <div class="settings-separator"></div>
-          <div class="settings-section ksef-settings">
-            <div>
-              <div class="settings-title-row"><h2>KSeF API</h2><span class="environment-badge">TEST</span></div>
-              <p>Bezpieczne połączenie przez Supabase Edge Function. Token KSeF nie jest wysyłany do przeglądarki.</p>
-              <a class="inline-link" href="https://api-test.ksef.mf.gov.pl/docs/v2" target="_blank" rel="noreferrer">Dokumentacja środowiska testowego ↗</a>
-            </div>
-            <div class="ksef-panel">
-              <div class="ksef-status-row">
-                <span class="ksef-status-dot" id="ksefStatusDot"></span>
-                <div><strong id="ksefStatusTitle">Wymaga logowania</strong><small id="ksefStatusDescription">Zaloguj się do Supabase, aby korzystać z integracji.</small></div>
-              </div>
-              <dl class="ksef-meta">
-                <div><dt>Środowisko</dt><dd>TEST</dd></div>
-                <div><dt>Ostatnia synchronizacja</dt><dd id="ksefLastSync">—</dd></div>
-              </dl>
-              <div class="ksef-actions">
-                <button class="secondary-button" id="testKsefConnection" type="button">Testuj połączenie</button>
-                <button class="primary-button" id="syncKsefInvoices" type="button">Pobierz faktury</button>
-              </div>
-              <p class="ksef-hint">Synchronizacja pobiera metadane faktur sprzedażowych i kosztowych z ostatnich 30 dni, a później działa przyrostowo.</p>
-            </div>
-          </div>
           <div class="settings-actions profile-save-actions"><span id="profileSaveHint">Zmiany zaczną obowiązywać po zapisaniu profilu.</span><button class="primary-button" id="saveCategoryProfiles">Zapisz cały profil</button></div>
         </article>
       </section>
@@ -426,9 +425,9 @@
     </div>
   </div>
 
-  <div class="modal-backdrop" id="authModal" aria-hidden="true">
+  <div class="modal-backdrop visible auth-required" id="authModal" aria-hidden="false">
     <div class="modal auth-modal" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
-      <div class="modal-header"><div><p class="eyebrow">Chmura danych</p><h2 id="authModalTitle">Połączenie z Supabase</h2></div><button class="icon-button modal-close" aria-label="Zamknij">×</button></div>
+      <div class="modal-header"><div><p class="eyebrow">Bezpieczny dostęp</p><h2 id="authModalTitle">Zaloguj się do Pewnika</h2></div><button class="icon-button modal-close auth-close" aria-label="Zamknij">×</button></div>
       <p class="auth-message" id="authMessage">Sprawdzanie konfiguracji…</p>
       <form id="authForm">
         <div class="form-stack" id="authFields">
